@@ -117,4 +117,4 @@ plot(Tempfd, xlab="Time", ylab="Index (Base=100)")
 #
 #komentaras
 #komentaras
-
+#test2
