@@ -115,4 +115,4 @@ Tempfd <- smooth.basis(time_numeric, Y_index, Tempbasis)$fd
 plot(Tempfd, xlab="Time", ylab="Index (Base=100)")
 
 #
-
+#komentaras
