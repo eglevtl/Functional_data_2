@@ -9,7 +9,7 @@ library(tidyr)
 library(fda)
 
 # 1) Load data ----------------------------
-path <- "C:/Users/liepa/Documents/VU/Mokslai 2025_2027/Functional data analysis/Projektas/Yfinance_close_prices.xlsx"
+path <- "Yfinance_close_prices.xlsx"
 px <- read_excel(path, sheet = "Close_prices") %>%
   mutate(Date = as.Date(Date)) %>%
   arrange(Date)
@@ -53,14 +53,42 @@ plot(basis_obj)
 
 # Roughness penalty: penalize curvature (2nd derivative)
 Lfd_obj <- int2Lfd(2)
-lambda  <- 1e-2  # tune later (larger => smoother)
 
-fdPar_obj <- fdPar(basis_obj, Lfd_obj, lambda) #smoothing settings
+# 5) Choose smoothing parameter using GCV ----------------------------
 
-length(t_rel)
-dim(scaled_returns)
+loglam <- seq(-6, 1, length.out = 50)
+gcv_vals <- numeric(length(loglam))
 
-# Smooth standardized returns
+for(i in seq_along(loglam)){
+
+  fdPar_tmp <- fdPar(
+    basis_obj,
+    Lfd_obj,
+    lambda = 10^loglam[i]
+  )
+
+  sm_tmp <- smooth.basis(
+    argvals = t_rel,
+    y = scaled_returns,
+    fdParobj = fdPar_tmp
+  )
+
+  gcv_vals[i] <- sum(sm_tmp$gcv)
+}
+
+# Plot GCV curve
+plot(loglam, gcv_vals,
+     type = "l",
+     xlab = "log10(lambda)",
+     ylab = "GCV")
+
+# Optimal lambda
+best_lambda <- 10^loglam[which.min(gcv_vals)]
+
+# 6) Smooth standardized returns ----------------------------
+
+fdPar_obj <- fdPar(basis_obj, Lfd_obj, best_lambda)
+
 sm <- smooth.basis(argvals = t_rel, y = scaled_returns, fdParobj = fdPar_obj)
 ret_fd <- sm$fd
 plot(ret_fd)
@@ -71,8 +99,7 @@ ret_fd$fdnames <- list(
   "Std. log return"
 )
 
-
-# 6) Pre/post windows --------------------
+# 7) Pre/post windows --------------------
 pre_days  <- -20:-1
 post_days <-  1:20
 
@@ -84,7 +111,10 @@ pre_mean  <- colMeans(scaled_returns[idx_pre, , drop = FALSE])
 post_mean <- colMeans(scaled_returns[idx_post, , drop = FALSE])
 print(data.frame(commodity = names(pre_mean), pre_mean, post_mean))
 
-# 7) Plot of smoothed return functions --------------------------------
+# 8) Plot of smoothed return functions --------------------------------
 plot(ret_fd, lwd = 2,
      xlab = "Days relative to tariff announcement",
      ylab = "Standardized log return (smoothed)")
+
+# Vertical line at event
+abline(v = 0, col = "red", lty = 2, lwd = 2)
