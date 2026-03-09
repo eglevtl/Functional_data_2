@@ -35,8 +35,42 @@ event_date <- as.Date("2025-04-02")
 t_rel <- as.numeric(dates_return - event_date)
 range_t <- range(t_rel)
 
+# 5) GCV for basis and lambda selection:
+nbasis_grid <- seq(15,40,5)
+lambda_grid <- 10^seq(-6,1,len=40)
 
+gcv_mat <- matrix(NA,length(nbasis_grid),length(lambda_grid))
 
+for(i in seq_along(nbasis_grid)){
+  
+  basis <- create.bspline.basis(range_t, nbasis_grid[i], norder=4)
+  
+  for(j in seq_along(lambda_grid)){
+    
+    fdPar_obj <- fdPar(basis, int2Lfd(2), lambda_grid[j])
+    
+    sm <- smooth.basis(t_rel, scaled_returns, fdPar_obj)
+    
+    gcv_mat[i,j] <- sum(sm$gcv)
+    
+  }
+}
+which(gcv_mat == min(gcv_mat), arr.ind = TRUE)
+
+best_nbasis <- nbasis_grid[3]
+best_lambda <- lambda_grid[40]
+
+nbasis_grid
+
+matplot(log10(lambda_grid), t(gcv_mat),
+        type = "l", lty = 1,
+        xlab = "log10(lambda)",
+        ylab = "GCV",
+        main = "GCV curves for different nbasis")
+legend("topright",
+       legend = paste("nbasis =", nbasis_grid),
+       col = 1:length(nbasis_grid),
+       lty = 1)
 
 # 4) Smooth into functional data objects ------------------------------
 
