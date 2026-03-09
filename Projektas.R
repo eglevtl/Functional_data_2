@@ -35,9 +35,9 @@ event_date <- as.Date("2025-04-02")
 t_rel <- as.numeric(dates_return - event_date)
 range_t <- range(t_rel)
 
-# 5) GCV for basis and lambda selection:
-nbasis_grid <- seq(15,40,5)
-lambda_grid <- 10^seq(-6,1,len=40)
+# 4) GCV for basis and lambda selection:
+nbasis_grid <- seq(10,45,5)
+lambda_grid <- 10^seq(-2,6,length.out=60)
 
 gcv_mat <- matrix(NA,length(nbasis_grid),length(lambda_grid))
 
@@ -58,7 +58,10 @@ for(i in seq_along(nbasis_grid)){
 which(gcv_mat == min(gcv_mat), arr.ind = TRUE)
 
 best_nbasis <- nbasis_grid[3]
-best_lambda <- lambda_grid[40]
+best_lambda <- lambda_grid[60]
+
+best_nbasis
+best_lambda
 
 nbasis_grid
 
@@ -72,47 +75,16 @@ legend("topright",
        col = 1:length(nbasis_grid),
        lty = 1)
 
-# 4) Smooth into functional data objects ------------------------------
+# 5) Smooth into functional data objects ------------------------------
 
 # Use B-splines: 1) non-periodic data, 2) local flexibiloity to shocks, 3) computationally efficient
-nbasis <- 25
+nbasis <- best_nbasis
 norder <- 4  # cubic splines
 basis_obj <- create.bspline.basis(rangeval = range_t, nbasis = nbasis, norder = norder)
 plot(basis_obj)
 
 # Roughness penalty: penalize curvature (2nd derivative)
 Lfd_obj <- int2Lfd(2)
-
-# 5) Choose smoothing parameter using GCV ----------------------------
-
-loglam <- seq(-6, 1, length.out = 50)
-gcv_vals <- numeric(length(loglam))
-
-for(i in seq_along(loglam)){
-
-  fdPar_tmp <- fdPar(
-    basis_obj,
-    Lfd_obj,
-    lambda = 10^loglam[i]
-  )
-
-  sm_tmp <- smooth.basis(
-    argvals = t_rel,
-    y = scaled_returns,
-    fdParobj = fdPar_tmp
-  )
-
-  gcv_vals[i] <- sum(sm_tmp$gcv)
-}
-
-# Plot GCV curve
-plot(loglam, gcv_vals,
-     type = "l",
-     xlab = "log10(lambda)",
-     ylab = "GCV")
-
-# Optimal lambda
-best_lambda <- 10^loglam[which.min(gcv_vals)]
 
 # 6) Smooth standardized returns ----------------------------
 
