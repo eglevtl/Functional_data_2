@@ -1,8 +1,3 @@
-# ---------------------------
-# Data prep for commodity prices (functional-data-ready)
-# Uses fda snippets: create.bspline.basis(), fdPar(), smooth.basis(), fd()
-# ---------------------------
-
 library(readxl)
 library(dplyr)
 library(tidyr)
