@@ -62,7 +62,7 @@ for(i in seq_along(lambda_grid)){
   
   fit <- smooth.basis(argvals=t_rel, y=scaled_returns, fdPar_obj)
   
-  gcv[i] <- fit$gcv
+  gcv[i] <- sum(fit$gcv)
 }
 best_lambda <- lambda_grid[which.min(gcv)]
 plot(log10(lambda_grid), gcv, type="l",
