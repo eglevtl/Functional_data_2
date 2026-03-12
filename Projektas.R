@@ -42,6 +42,11 @@ plot(fdataobj_not_normalized)
 
 Lfd_obj <- int2Lfd(2)
 
+###########################################################################################
+#                                     SMOOTHING
+###########################################################################################
+
+
 ############################################
 #ONLY LAMBDA SELECTION OPTION
 ############################################
@@ -166,3 +171,57 @@ plot(ret_fd, lwd = 2,
 
 # Vertical line at event
 abline(v = 0, col = "red", lty = 2, lwd = 2)
+
+###########################################################################################
+#                             EXPLOARATORY DATA ANALYSIS
+###########################################################################################
+
+#elementary pointwise mean and standard deviation
+
+mean_ret = mean.fd(ret_fd)
+stddev_ret = std.fd(ret_fd)
+
+lines(mean_ret, lwd=4, lty=2, col=2)
+lines(stddev_ret, lwd=4, lty=2, col=4)
+
+lines(mean_ret-stddev_ret, lwd=4, lty=2, col=6)
+lines(mean_ret+stddev_ret, lwd=4, lty=2, col=6)
+
+
+#Compute the functional variance–covariance surface
+
+var_cov_ret = var.fd(ret_fd)
+
+days        = seq(min(t_rel), max(t_rel),length=60)
+var_mat  = eval.bifd(days, days,
+                     var_cov_ret)
+
+# Figure 6.1 correlation graphs of log10 precipitation 
+
+persp(days, days, var_mat,
+      theta=-45, phi=25, r=3, expand = 0.5,
+      ticktype='detailed',
+      xlab="Day",
+      ylab="Day",
+      zlab="variance(log daily returns)")
+
+contour(days, days, var_mat,
+        xlab="Day",
+        ylab="Day")
+
+
+day5time = seq(min(t_rel), max(t_rel),5)
+varmat = eval.bifd(day5time, day5time,
+                   var_cov_ret)
+contour(day5time, day5time, varmat,
+        col=terrain.colors(12),
+        xlab="Day",
+        ylab="Day", lwd=2,
+        labcex=1)
+
+
+
+
+
+
+
