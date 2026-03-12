@@ -2,6 +2,7 @@ library(readxl)
 library(dplyr)
 library(tidyr)
 library(fda)
+library(fda.usc)
 
 # 1) Load data ----------------------------
 path <- "Yfinance_close_prices.xlsx"
@@ -35,9 +36,60 @@ event_date <- as.Date("2025-04-02")
 t_rel <- as.numeric(dates_return - event_date)
 range_t <- range(t_rel)
 
-# 4) GCV for basis and lambda selection: <- neveikia man normaliai sitas :((( labai stipriai susmoothina
-nbasis_grid <- seq(10,45,5)
-lambda_grid <- 10^seq(-2,6,length.out=60)
+tt=1:length(t_rel)
+fdataobj_not_normalized<-fdata(t(scaled_returns),tt)
+plot(fdataobj_not_normalized)
+
+Lfd_obj <- int2Lfd(2)
+
+############################################
+#ONLY LAMBDA SELECTION OPTION
+############################################
+
+# Use B-splines: 1) non-periodic data, 2) local flexibiloity to shocks, 3) computationally efficient
+nbasis <- 7
+norder <- 4  # cubic splines
+basis_obj <- create.bspline.basis(rangeval = range_t, nbasis = nbasis, norder = norder)
+plot(basis_obj)
+
+# 4) GCV for lambda selection:
+lambda_grid <- 10^seq(-2, 2, length.out = 40)
+gcv <- numeric(length(lambda_grid))
+
+for(i in seq_along(lambda_grid)){
+  
+  fdPar_obj <- fdPar(basis_obj, int2Lfd(2), lambda_grid[i])
+  
+  fit <- smooth.basis(argvals=t_rel, y=scaled_returns, fdPar_obj)
+  
+  gcv[i] <- fit$gcv
+}
+best_lambda <- lambda_grid[which.min(gcv)]
+plot(log10(lambda_grid), gcv, type="l",
+     xlab="log10(lambda)", ylab="GCV")
+
+
+fdPar_obj <- fdPar(basis_obj, Lfd_obj, best_lambda) #smoothing settings
+
+sm <- smooth.basis(argvals = t_rel, y = scaled_returns, fdParobj = fdPar_obj)
+ret_fd <- sm$fd
+
+ret_fd$fdnames <- list(
+  "Days relative to event (t)",
+  "Commodity" = colnames(scaled_returns),
+  "Std. log return"
+)
+
+plot(ret_fd)
+
+
+############################################
+#BASIS AND LAMBDA SELECTION OPTION
+############################################
+
+# 4) GCV for lambda and basis selection:
+nbasis_grid <- seq(7,10,1)
+lambda_grid <- 10^seq(-2, 2, length.out = 40)
 
 gcv_mat <- matrix(NA,length(nbasis_grid),length(lambda_grid))
 
@@ -58,12 +110,10 @@ for(i in seq_along(nbasis_grid)){
 which(gcv_mat == min(gcv_mat), arr.ind = TRUE)
 
 best_nbasis <- nbasis_grid[3]
-best_lambda <- lambda_grid[60]
+best_lambda <- lambda_grid[40]
 
 best_nbasis
 best_lambda
-
-nbasis_grid
 
 matplot(log10(lambda_grid), t(gcv_mat),
         type = "l", lty = 1,
@@ -74,41 +124,28 @@ legend("topright",
        legend = paste("nbasis =", nbasis_grid),
        col = 1:length(nbasis_grid),
        lty = 1)
-#________________________________________________
-#________________________________________________
 
 
-# 5) Smooth into functional data objects ------------------------------
-
-# Use B-splines: 1) non-periodic data, 2) local flexibiloity to shocks, 3) computationally efficient
-nbasis <- 25
+nbasis <- best_nbasis
 norder <- 4  # cubic splines
 basis_obj <- create.bspline.basis(rangeval = range_t, nbasis = nbasis, norder = norder)
 plot(basis_obj)
 
-# Roughness penalty: penalize curvature (2nd derivative)
-Lfd_obj <- int2Lfd(2)
-
-
-
-#6) Smooth standardized returns ----------------------------
-
-#7) smoothing without lambda selection
-# Roughness penalty: penalize curvature (2nd derivative)
-Lfd_obj <- int2Lfd(2)
-lambda  <- 1e-2  # tune later (larger => smoother)
+lambda  <- best_lambda
 
 fdPar_obj <- fdPar(basis_obj, Lfd_obj, lambda) #smoothing settings
 
 sm <- smooth.basis(argvals = t_rel, y = scaled_returns, fdParobj = fdPar_obj)
 ret_fd <- sm$fd
-plot(ret_fd)
 
 ret_fd$fdnames <- list(
   "Days relative to event (t)",
   "Commodity" = colnames(scaled_returns),
   "Std. log return"
 )
+
+plot(ret_fd)
+
 
 # 7) Pre/post windows --------------------
 pre_days  <- -20:-1
