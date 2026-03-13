@@ -1,8 +1,10 @@
+rm(list=ls())
 library(readxl)
 library(dplyr)
 library(tidyr)
 library(fda)
 library(fda.usc)
+library(fdaoutlier)
 
 # 1) Load data ----------------------------
 path <- "Yfinance_close_prices.xlsx"
@@ -219,9 +221,49 @@ contour(day5time, day5time, varmat,
         ylab="Day", lwd=2,
         labcex=1)
 
+############################################################
+# FUNCTIONAL DEPTH ANALYSIS, OUTLIERS, BOXPLOTS
+############################################################
 
+# depth
+tt <- t_rel
 
+fdataobj <- fdata(t(eval.fd(tt, ret_fd)), tt)
+plot(fdataobj)
 
+# Fraiman-Muniz depth
+out.FM <- depth.FM(fdataobj, trim = 0.1, draw = TRUE)
 
+# Modal depth
+out.mode <- depth.mode(fdataobj, trim = 0.1, draw = TRUE)
 
+# Random projection depth
+out.RP <- depth.RP(fdataobj, trim = 0.1, draw = TRUE)
+
+# functional boxplot
+boxplot(ret_fd)
+
+# evaluate functions
+lgp <- eval.fd(tt, ret_fd)
+
+# band depth
+bd <- band_depth(t(lgp))
+names(bd) <- colnames(lgp)
+plot(bd, type = "l")
+
+# modified band depth
+mbd <- modified_band_depth(t(lgp))
+names(mbd) <- colnames(lgp)
+plot(mbd, type = "l")
+
+# functional boxplot + outliers
+fbplot_obj <- functional_boxplot(t(lgp), depth_method = "mbd")
+fbplot_obj$outliers
+
+# MUOD outlier detection
+m <- muod(t(lgp), cut_method = "boxplot")
+m$outliers
+
+# functional boxplot visualization
+fbplot(lgp, method = "MBD")
 
