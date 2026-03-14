@@ -48,50 +48,8 @@ Lfd_obj <- int2Lfd(2)
 #                                     SMOOTHING
 ###########################################################################################
 
-
 ############################################
-#ONLY LAMBDA SELECTION OPTION
-############################################
-
-# Use B-splines: 1) non-periodic data, 2) local flexibiloity to shocks, 3) computationally efficient
-nbasis <- 7
-norder <- 4  # cubic splines
-basis_obj <- create.bspline.basis(rangeval = range_t, nbasis = nbasis, norder = norder)
-plot(basis_obj)
-
-# 4) GCV for lambda selection:
-lambda_grid <- 10^seq(-2, 2, length.out = 40)
-gcv <- numeric(length(lambda_grid))
-
-for(i in seq_along(lambda_grid)){
-  
-  fdPar_obj <- fdPar(basis_obj, int2Lfd(2), lambda_grid[i])
-  
-  fit <- smooth.basis(argvals=t_rel, y=scaled_returns, fdPar_obj)
-  
-  gcv[i] <- sum(fit$gcv)
-}
-best_lambda <- lambda_grid[which.min(gcv)]
-plot(log10(lambda_grid), gcv, type="l",
-     xlab="log10(lambda)", ylab="GCV")
-
-
-fdPar_obj <- fdPar(basis_obj, Lfd_obj, best_lambda) #smoothing settings
-
-sm <- smooth.basis(argvals = t_rel, y = scaled_returns, fdParobj = fdPar_obj)
-ret_fd <- sm$fd
-
-ret_fd$fdnames <- list(
-  "Days relative to event (t)",
-  "Commodity" = colnames(scaled_returns),
-  "Std. log return"
-)
-
-plot(ret_fd)
-
-
-############################################
-#BASIS AND LAMBDA SELECTION OPTION
+#BASIS AND LAMBDA SELECTION WITH GCV
 ############################################
 
 # 4) GCV for lambda and basis selection:
@@ -301,8 +259,11 @@ plot(pcalist$harmonics)
 #Rotation
 varmx <- varmx.pca.fd(pcalist)
 plot(varmx)
-#PCA1: mainly reflects pre-announcement vs post-announcement movements. From the shape: 
+#PCA1: mainly reflects pre-announcement vs post-announcement movements - mainly magnitude. From the shape: 
 #moderate change before event, stronger movement afterward
+#PCA2: reflects differences in the timing of reactions. Some react right when tariffs are announced, some have delayed reaction, or more gradual reaction.
+#PCA3: capture commodities most sensitive to trade policy. Like: industrial commodities (copper), energy (oil).
+#PCA4: this explains only a small fraction of variation. Small commodity-specific fluctuations, minor delayed reactions.
 
 plot(varmx$harmonics)
 
