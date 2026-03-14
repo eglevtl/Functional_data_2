@@ -278,3 +278,23 @@ lines(tt, lgp[,2], col="blue", lwd=3)  # magnitude outlier
 # functional boxplot visualization
 fbplot(lgp, method = "MBD")
 
+###############################################
+#PRINCIPAL COMPONENTS ANALYSIS
+###############################################
+
+nharm = 4
+pcalist = pca.fd(ret_fd, nharm, centerfns = TRUE)
+pcalist$varprop
+cumsum(pcalist$varprop) #the choice of 4 harmonics is good because the cumulative variation is around 95%, which means that 
+#most of variation is explained, another harmonic would probably catch mostely noise and only 3 harmonics would
+#explain too little of teh total variance.
+
+plot(pcalist)
+plot(pcalist$harmonics)
+#PCA1: This component captures the general intensity of the response to tariffs.
+#PCA2: This component likely separates commodities reacting in opposite directions.Captures the divergence 
+#between commodities benefiting from geopolitical uncertainty and those sensitive to trade restrictions.
+#PCA3: This component reflects when commodities reacted. Some commodities react immediately, 
+#others adjust several days after the announcement.
+#PCA4: Explains little of the total variance and is probably related to short-trem fluctuations and comodity specific noise.
+
