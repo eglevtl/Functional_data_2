@@ -298,3 +298,11 @@ plot(pcalist$harmonics)
 #others adjust several days after the announcement.
 #PCA4: Explains little of the total variance and is probably related to short-trem fluctuations and comodity specific noise.
 
+#Rotation
+varmx <- varmx.pca.fd(pcalist)
+plot(varmx)
+#PCA1: mainly reflects pre-announcement vs post-announcement movements. From the shape: 
+#moderate change before event, stronger movement afterward
+
+plot(varmx$harmonics)
+
