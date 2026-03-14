@@ -6,6 +6,10 @@ library(fda)
 library(fda.usc)
 library(fdaoutlier)
 
+###########################################################################################
+#                                     DATASET PREPARATION
+###########################################################################################
+
 # 1) Load data ----------------------------
 path <- "Yfinance_close_prices.xlsx"
 px <- read_excel(path, sheet = "Close_prices") %>%
@@ -106,37 +110,39 @@ ret_fd <- sm$fd
 ret_fd$fdnames <- list(
   "Days relative to event (t)",
   "Commodity" = colnames(scaled_returns),
-  "Std. log return"
+  "Scaled log return"
 )
 
-plot(ret_fd)
+plot(ret_fd, lwd = 2,
+     xlab = "Days relative to tariff announcement",
+     ylab = "Scaled log return (smoothed)")
+
+# Vertical line at event
+abline(v = 0, col = "red", lty = 2, lwd = 2)
 
 
-# 7) Pre/post windows --------------------
+
+# 7) Pre/post windows -------------------- (20 days before and 20 days after the event)
 pre_days  <- -20:-1
 post_days <-  1:20
 
 idx_pre  <- which(t_rel %in% pre_days)
 idx_post <- which(t_rel %in% post_days)
 
-# average pre vs post standardized returns
+# average pre vs post scaled returns
 pre_mean  <- colMeans(scaled_returns[idx_pre, , drop = FALSE])
 post_mean <- colMeans(scaled_returns[idx_post, , drop = FALSE])
-print(data.frame(commodity = names(pre_mean), pre_mean, post_mean))
-
-# 8) Plot of smoothed return functions --------------------------------
-plot(ret_fd, lwd = 2,
-     xlab = "Days relative to tariff announcement",
-     ylab = "Standardized log return (smoothed)")
-
-# Vertical line at event
-abline(v = 0, col = "red", lty = 2, lwd = 2)
+print(data.frame(pre_mean, post_mean))
 
 ###########################################################################################
 #                             EXPLOARATORY DATA ANALYSIS
 ###########################################################################################
 
 #elementary pointwise mean and standard deviation
+
+plot(ret_fd,
+     xlab = "Days relative to tariff announcement",
+     ylab = "Scaled log return (smoothed)")
 
 mean_ret = mean.fd(ret_fd)
 stddev_ret = std.fd(ret_fd)
@@ -156,24 +162,12 @@ days        = seq(min(t_rel), max(t_rel),length=60)
 var_mat  = eval.bifd(days, days,
                      var_cov_ret)
 
-# Figure 6.1 correlation graphs of log10 precipitation 
+# Corelation graph 
 
-persp(days, days, var_mat,
-      theta=-45, phi=25, r=3, expand = 0.5,
-      ticktype='detailed',
-      xlab="Day",
-      ylab="Day",
-      zlab="variance(log daily returns)")
-
-contour(days, days, var_mat,
-        xlab="Day",
-        ylab="Day")
-
-
-day5time = seq(min(t_rel), max(t_rel),5)
-varmat = eval.bifd(day5time, day5time,
+daytime = seq(min(t_rel), max(t_rel),1)
+varmat = eval.bifd(daytime, daytime,
                    var_cov_ret)
-contour(day5time, day5time, varmat,
+contour(daytime, daytime, varmat,
         col=terrain.colors(12),
         xlab="Day",
         ylab="Day", lwd=2,
