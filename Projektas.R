@@ -229,7 +229,9 @@ contour(day5time, day5time, varmat,
 tt <- t_rel
 
 fdataobj <- fdata(t(eval.fd(tt, ret_fd)), tt)
-plot(fdataobj)
+plot(fdataobj, lwd = 2,
+     xlab = "Days relative to tariff announcement",
+     ylab = "Standardized log return (smoothed)")
 
 # Fraiman-Muniz depth
 out.FM <- depth.FM(fdataobj, trim = 0.1, draw = TRUE)
@@ -256,13 +258,22 @@ mbd <- modified_band_depth(t(lgp))
 names(mbd) <- colnames(lgp)
 plot(mbd, type = "l")
 
+#Curve 8 is the most central function
+#The other curves are less central but very similar to each other. 
+#So the data appears very symmetric, with one curve clearly sitting in the middle of the band.
+
 # functional boxplot + outliers
 fbplot_obj <- functional_boxplot(t(lgp), depth_method = "mbd")
 fbplot_obj$outliers
 
+#flagged outliers are curves: 5, 6, 7, 9
+
 # MUOD outlier detection
 m <- muod(t(lgp), cut_method = "boxplot")
 m$outliers
+matplot(tt, lgp, type="l", lty=1)
+lines(tt, lgp[,5], col="red", lwd=3)   # shape/amplitude outlier
+lines(tt, lgp[,2], col="blue", lwd=3)  # magnitude outlier
 
 # functional boxplot visualization
 fbplot(lgp, method = "MBD")
