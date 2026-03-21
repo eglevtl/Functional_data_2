@@ -44,7 +44,13 @@ range_t <- range(t_rel)
 
 tt=1:length(t_rel)
 fdataobj_not_normalized<-fdata(t(scaled_returns),tt)
-plot(fdataobj_not_normalized)
+plot(
+  fdataobj_not_normalized,
+  xlab = "Time",
+  ylab = "Return",
+  main = ""
+)
+
 
 Lfd_obj <- int2Lfd(2)
 
@@ -88,7 +94,7 @@ matplot(log10(lambda_grid), t(gcv_mat),
         type = "l", lty = 1,
         xlab = "log10(lambda)",
         ylab = "GCV",
-        main = "GCV curves for different nbasis")
+        main = "")
 legend("topright",
        legend = paste("nbasis =", nbasis_grid),
        col = 1:length(nbasis_grid),
@@ -114,6 +120,7 @@ ret_fd$fdnames <- list(
 )
 
 plot(ret_fd, lwd = 2,
+     main = "",
      xlab = "Days relative to tariff announcement",
      ylab = "Scaled log return (smoothed)")
 
@@ -185,6 +192,7 @@ plot(fdataobj, lwd = 2,
      xlab = "Days relative to tariff announcement",
      ylab = "Standardized log return (smoothed)")
 
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
 # Fraiman-Muniz depth
 out.FM <- depth.FM(fdataobj, trim = 0.1, draw = TRUE)
 
@@ -193,6 +201,7 @@ out.mode <- depth.mode(fdataobj, trim = 0.1, draw = TRUE)
 
 # Random projection depth
 out.RP <- depth.RP(fdataobj, trim = 0.1, draw = TRUE)
+par(mfrow = c(1, 1))
 
 # functional boxplot
 boxplot(ret_fd)
@@ -241,6 +250,7 @@ cumsum(pcalist$varprop) #the choice of 4 harmonics is good because the cumulativ
 #most of variation is explained, another harmonic would probably catch mostely noise and only 3 harmonics would
 #explain too little of teh total variance.
 
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
 plot(pcalist)
 plot(pcalist$harmonics)
 #PCA1: This component captures the general intensity of the response to tariffs.
