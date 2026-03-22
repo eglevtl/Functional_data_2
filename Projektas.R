@@ -237,7 +237,22 @@ lines(tt, lgp[,5], col="red", lwd=3)   # shape/amplitude outlier
 lines(tt, lgp[,2], col="blue", lwd=3)  # magnitude outlier
 
 # functional boxplot visualization
-fbplot(lgp, method = "MBD")
+fbplot(t(lgp), method = "MBD",
+       xaxt = "n",
+       main = "Functional boxplot using Modified Band Depth",
+       xlab = "Days relative to event (t)",
+       ylab = "Standardized log returns")
+
+# norimos dienos grafike
+ticks <- c(-20, 0, 20, 40, 60)
+
+# artimiausi grafikai
+tick_pos <- sapply(ticks, function(x) which.min(abs(t_rel - x)))
+
+#asis
+axis(1,
+     at = tick_pos,
+     labels = ticks)
 
 ###############################################
 #PRINCIPAL COMPONENTS ANALYSIS
