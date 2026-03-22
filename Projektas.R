@@ -237,7 +237,7 @@ lines(tt, lgp[,5], col="red", lwd=3)   # shape/amplitude outlier
 lines(tt, lgp[,2], col="blue", lwd=3)  # magnitude outlier
 
 # functional boxplot visualization
-fbplot(t(lgp), method = "MBD",
+fbplot(lgp, method = "MBD",
        xaxt = "n",
        main = "Functional boxplot using Modified Band Depth",
        xlab = "Days relative to event (t)",
