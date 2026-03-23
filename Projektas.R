@@ -236,6 +236,12 @@ matplot(tt, lgp, type="l", lty=1)
 lines(tt, lgp[,5], col="red", lwd=3)   # shape/amplitude outlier
 lines(tt, lgp[,2], col="blue", lwd=3)  # magnitude outlier
 
+legend("topright",
+       legend = colnames(lgp)[c(5, 2)],
+       col = c("red", "blue"),
+       lwd = 3,
+       cex = 0.8)
+
 # functional boxplot visualization
 fbplot(lgp, method = "MBD",
        xaxt = "n",
