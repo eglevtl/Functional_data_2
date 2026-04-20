@@ -239,6 +239,10 @@ lines(tt, lgp[,2], col="blue", lwd=3)  # magnitude outlier
 # functional boxplot visualization
 fbplot(lgp, method = "MBD")
 
+colnames(lgp)
+colnames(lgp)[5]
+colnames(lgp)[2]
+
 ###############################################
 #PRINCIPAL COMPONENTS ANALYSIS
 ###############################################
@@ -271,3 +275,63 @@ plot(varmx)
 
 plot(varmx$harmonics)
 
+
+###########################################################################################
+#                         AMPLITUDE & PHASE DECOMPOSITION
+###########################################################################################
+# Amplitude variation — did commodities react with different magnitudes? 
+#(gold up a lot, copper down a lot)
+
+#Phase variation — did they react at different times? 
+#(some spiked on day −3 anticipating the news, others lagged to day +5)
+
+#Warping meaning:
+#A simple example: suppose copper and gold both have a dip after the announcement, 
+#but copper's dip happens at day +2 and gold's at day +4. If you warp gold's time 
+#axis — squeezing it slightly — gold's dip shifts to day +2 and now both curves 
+#align. The warping function records exactly how much you had to squeeze or 
+#stretch each commodity's time axis to achieve that alignment.
+
+#In the results this turned out to matter very little (only 15% phase variation), 
+#meaning the curves were already well aligned in time and barely needed any warping — 
+#makes intuitive sense, since all commodities reacted to the same single public 
+#announcement on the same day.
+
+# Registration (needed to run AmpPhaseDecomp)
+wbasis_CR <- create.bspline.basis(range_t, norder = 3,
+                                  breaks = c(range_t[1], 0, range_t[2])) #Creates basis functions that will be used to describe how time gets stretched. The given time range and noted special knot at t = 0 (the announcement day), allowes the warping to behave differently before and after the event.
+Wfd0_CR   <- fd(matrix(0, wbasis_CR$nbasis, ncol(scaled_returns)), wbasis_CR) #Creates a starting point for the warping — a flat function, one per commodity, all set to zero.
+WfdPar_CR <- fdPar(Wfd0_CR, 1, lambda = 1e-1) #Wraps the warping function in a smoothness constraint. The lambda = 1e-1 controls how flexible the time-warping is allowed to be — higher lambda means more rigid (closer to no warping), lower means more flexible
+
+reg_CR     <- register.fd(y0fd = mean.fd(ret_fd), yfd = ret_fd, WfdParobj = WfdPar_CR) #Takes smoothed commodity curves (ret_fd) and iteratively warps each one's time axis until it aligns as closely as possible to the mean curve (mean.fd(ret_fd)).
+ret_fd_reg <- reg_CR$regfd #Extracts the registered curves from the result — these are original commodity curves but with their time axes adjusted so they all align to the mean shape.
+warpfd_reg <- reg_CR$warpfd #Extracts the warping functions — one per commodity, describing exactly how that commodity's time axis was stretched or compressed during registration. These are what AmpPhaseDecomp uses to separate timing variation from magnitude variation.
+
+# AmpPhaseDecomp
+decomp_interval <- c(range_t[1] + 2, range_t[2] - 2) #trimming because warping functions can behave erratically near the boundaries
+
+amp_phase <- AmpPhaseDecomp(xfd    = ret_fd,
+                            yfd    = ret_fd_reg,
+                            hfd = warpfd_reg,
+                            rng    = decomp_interval)
+
+cat(sprintf("Amplitude MS : %.4f (%.1f%%)\n", amp_phase$MS.amp, 100 * amp_phase$MS.amp / (amp_phase$MS.amp + amp_phase$MS.pha)))
+cat(sprintf("Phase MS     : %.4f (%.1f%%)\n", amp_phase$MS.pha, 100 * amp_phase$MS.pha / (amp_phase$MS.amp + amp_phase$MS.pha)))
+cat(sprintf("R-squared    : %.4f\n", amp_phase$RSQR))
+
+#Result: 
+#85% amplitude, 15% phase — the dominant source of variation across commodity curves 
+#is how much they moved, not when they moved. Commodities reacted to the tariff 
+#announcement at roughly similar times, but with very different magnitudes. 
+#Some shot up strongly, others dropped sharply, others barely moved — but they all 
+#did it at approximately the same moment.
+
+#The R-squared of 0.15 measures how much of the total variation registration actually 
+#managed to remove by time-warping. A value of 0.15 means registration explained very 
+#little — the curves were already well-aligned in time before registration, 
+#so there wasn't much phase variation to remove in the first place. 
+
+#In Conclusion: the tariff shock hit all commodity markets at the same time 
+#but the size and direction of each market's response varied substantially
+#across commodities — and that magnitude variation is what distinguishes 
+#the assets between one another.
