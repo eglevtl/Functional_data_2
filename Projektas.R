@@ -236,8 +236,29 @@ matplot(tt, lgp, type="l", lty=1)
 lines(tt, lgp[,5], col="red", lwd=3)   # shape/amplitude outlier
 lines(tt, lgp[,2], col="blue", lwd=3)  # magnitude outlier
 
+legend("topright",
+       legend = colnames(lgp)[c(5, 2)],
+       col = c("red", "blue"),
+       lwd = 3,
+       cex = 0.8)
+
 # functional boxplot visualization
-fbplot(lgp, method = "MBD")
+fbplot(lgp, method = "MBD",
+       xaxt = "n",
+       main = "Functional boxplot using Modified Band Depth",
+       xlab = "Days relative to event (t)",
+       ylab = "Standardized log returns")
+
+# norimos dienos grafike
+ticks <- c(-20, 0, 20, 40, 60)
+
+# artimiausi grafikai
+tick_pos <- sapply(ticks, function(x) which.min(abs(t_rel - x)))
+
+#asis
+axis(1,
+     at = tick_pos,
+     labels = ticks)
 
 colnames(lgp)
 colnames(lgp)[5]
