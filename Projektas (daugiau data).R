@@ -504,3 +504,33 @@ plot(ret_fd[cluster2_idx],
      xlab = "Days relative to tariff announcement",
      ylab = "Scaled log return")
 abline(h = 0, v = 0, lty = 3, col = "grey60")
+
+
+########################################################################
+#### One sample pointwise-bootstrap-test                            ####
+########################################################################
+
+source("items/Zboottest.R")
+
+mu0 <- fd(
+  matrix(0,
+         nrow = ret_fd$basis$nbasis,
+         ncol = 1),
+  ret_fd$basis
+)
+
+t.seq <- seq(min(t_rel), max(t_rel), by = 1)
+
+#H0: Commodity markets show no abnormal reaction to the tariff announcement 
+#(returns are consistent with normal fluctuations).
+
+#H1: There exists at least one time point where returns are significantly 
+#different from zero, indicating a market reaction.
+
+stat_all <- Z.boot(x = ret_fd, t.seq = t.seq, mu = mu0, 
+  replication = 500, alpha = 0.05)
+
+#The one-sample pointwise bootstrap test shows that mean returns are not different from zero for most of the period. 
+#However, a significant negative deviation appears around the event date, indicating a short-lived adverse market reaction
+#that quickly dissipates.
+
