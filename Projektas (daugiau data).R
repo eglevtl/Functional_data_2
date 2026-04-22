@@ -145,6 +145,84 @@ pre_mean  <- colMeans(scaled_returns[idx_pre, , drop = FALSE])
 post_mean <- colMeans(scaled_returns[idx_post, , drop = FALSE])
 print(data.frame(pre_mean, post_mean))
 
+
+
+
+###########################################################################################
+#                           GRAPH SPLITTING BY HAND MADE GROUP
+###########################################################################################
+
+
+
+
+
+group1 <- c(
+  "Gold", "Silver", "US_Dollar_Index", "Japanese_Yen",
+  "Swiss_Franc", "Euro", "10-Year_Treasury_Note","Palladium", "Platinum"
+)
+
+group2 <- c(
+  "Copper", "Aluminum", "Gasoline",
+  "Crude_Oil", "Natural_Gas", "Wheat", "Corn", "Soybeans",
+  "Coffee", "Sugar", "Cotton"
+)
+
+all_names <- colnames(scaled_returns)
+
+idx1 <- match(group1, all_names)
+idx2 <- match(group2, all_names)
+
+par(mfrow = c(1, 2))
+
+plot(ret_fd[idx1],
+     main = "Smoothed curves: Group 1",
+     xlab = "Days relative to tariff announcement",
+     ylab = "Scaled log return")
+abline(h = 0, v = 0, lty = 3, col = "grey60")
+
+plot(ret_fd[idx2],
+     main = "Smoothed curves: Group 2",
+     xlab = "Days relative to tariff announcement",
+     ylab = "Scaled log return")
+abline(h = 0, v = 0, lty = 3, col = "grey60")
+
+idx1 <- match(group1, all_names)
+idx2 <- match(group2, all_names)
+
+# evaluate both groups on a common grid to get one shared y-scale
+plot_days <- seq(min(t_rel), max(t_rel), by = 1)
+
+mat_g1 <- eval.fd(plot_days, ret_fd[idx1])
+mat_g2 <- eval.fd(plot_days, ret_fd[idx2])
+
+ylim_common <- range(c(mat_g1, mat_g2), na.rm = TRUE)
+
+par(mfrow = c(1, 2))
+
+plot(ret_fd[idx1],
+     ylim = ylim_common,
+     main = "Smoothed curves: Group 1",
+     xlab = "Days relative to tariff announcement",
+     ylab = "Scaled log return")
+abline(h = 0, v = 0, lty = 3, col = "grey60")
+
+plot(ret_fd[idx2],
+     ylim = ylim_common,
+     main = "Smoothed curves: Group 2",
+     xlab = "Days relative to tariff announcement",
+     ylab = "Scaled log return")
+abline(h = 0, v = 0, lty = 3, col = "grey60")
+
+
+
+
+
+
+
+
+
+
+
 ###########################################################################################
 #                             EXPLOARATORY DATA ANALYSIS
 ###########################################################################################
@@ -386,3 +464,33 @@ text(scores_mat[, 1], scores_mat[, 2],
      pos    = 3, cex = 0.8)
 abline(h = 0, v = 0, lty = 3, col = "grey60")
 
+cluster_df <- data.frame(
+  Commodity = colnames(scaled_returns),
+  Cluster   = factor(km$cluster),
+  FPC1      = scores_mat[, 1],
+  FPC2      = scores_mat[, 2]
+)
+
+split(cluster_df$Commodity, cluster_df$Cluster)
+
+plot(pcalist$harmonics[1], main = "Harmonic 1")
+plot(pcalist$harmonics[2], main = "Harmonic 2")
+
+cluster1_idx <- which(km$cluster == 1)
+cluster2_idx <- which(km$cluster == 2)
+
+par(mfrow = c(1, 2))
+
+plot(ret_fd[cluster1_idx],
+     main = "Smoothed curves: Cluster 1",
+     xlab = "Days relative to tariff announcement",
+     ylab = "Scaled log return")
+
+abline(h = 0, v = 0, lty = 3, col = "grey60")
+
+plot(ret_fd[cluster2_idx],
+     main = "Smoothed curves: Cluster 2",
+     xlab = "Days relative to tariff announcement",
+     ylab = "Scaled log return")
+
+abline(h = 0, v = 0, lty = 3, col = "grey60")
