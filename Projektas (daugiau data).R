@@ -201,14 +201,14 @@ par(mfrow = c(1, 2))
 
 plot(ret_fd[idx1],
      ylim = ylim_common,
-     main = "Smoothed curves: Group 1",
+     main = "Smoothed curves: Group 1 (Safe-haven)",
      xlab = "Days relative to tariff announcement",
      ylab = "Scaled log return")
 abline(h = 0, v = 0, lty = 3, col = "grey60")
 
 plot(ret_fd[idx2],
      ylim = ylim_common,
-     main = "Smoothed curves: Group 2",
+     main = "Smoothed curves: Group 2 (Cyclical)",
      xlab = "Days relative to tariff announcement",
      ylab = "Scaled log return")
 abline(h = 0, v = 0, lty = 3, col = "grey60")
@@ -479,18 +479,28 @@ plot(pcalist$harmonics[2], main = "Harmonic 2")
 cluster1_idx <- which(km$cluster == 1)
 cluster2_idx <- which(km$cluster == 2)
 
+
+plot_days <- seq(min(t_rel), max(t_rel), by = 1)
+
+mat_c1 <- eval.fd(plot_days, ret_fd[cluster1_idx])
+mat_c2 <- eval.fd(plot_days, ret_fd[cluster2_idx])
+
+# common y-axis
+ylim_common <- range(c(mat_c1, mat_c2), na.rm = TRUE)
+
+
 par(mfrow = c(1, 2))
 
 plot(ret_fd[cluster1_idx],
+     ylim = ylim_common,
      main = "Smoothed curves: Cluster 1",
      xlab = "Days relative to tariff announcement",
      ylab = "Scaled log return")
-
 abline(h = 0, v = 0, lty = 3, col = "grey60")
 
 plot(ret_fd[cluster2_idx],
+     ylim = ylim_common,
      main = "Smoothed curves: Cluster 2",
      xlab = "Days relative to tariff announcement",
      ylab = "Scaled log return")
-
 abline(h = 0, v = 0, lty = 3, col = "grey60")
