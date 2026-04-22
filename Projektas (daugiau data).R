@@ -56,7 +56,7 @@ plot(
 )
 
 
-Lfd_obj <- int2Lfd(2)
+Lfd_obj <- int2Lfd(0)
 
 ###########################################################################################
 #                                     SMOOTHING
@@ -67,8 +67,8 @@ Lfd_obj <- int2Lfd(2)
 ############################################
 
 # 4) GCV for lambda and basis selection:
-nbasis_grid <- seq(7,10,1)
-lambda_grid <- 10^seq(-2, 2, length.out = 40)
+nbasis_grid <- seq(6,21,1)
+lambda_grid <- 10^seq(-2, 10, length.out = 100)
 
 gcv_mat <- matrix(NA,length(nbasis_grid),length(lambda_grid))
 
@@ -78,7 +78,7 @@ for(i in seq_along(nbasis_grid)){
   
   for(j in seq_along(lambda_grid)){
     
-    fdPar_obj <- fdPar(basis, int2Lfd(2), lambda_grid[j])
+    fdPar_obj <- fdPar(basis, int2Lfd(0), lambda_grid[j])
     
     sm <- smooth.basis(t_rel, scaled_returns, fdPar_obj)
     
@@ -88,8 +88,8 @@ for(i in seq_along(nbasis_grid)){
 }
 which(gcv_mat == min(gcv_mat), arr.ind = TRUE)
 
-best_nbasis <- nbasis_grid[3]
-best_lambda <- lambda_grid[40]
+best_nbasis <- nbasis_grid[15]
+best_lambda <- lambda_grid[27]
 
 best_nbasis
 best_lambda
@@ -178,11 +178,14 @@ var_mat  = eval.bifd(days, days,
 daytime = seq(min(t_rel), max(t_rel),1)
 varmat = eval.bifd(daytime, daytime,
                    var_cov_ret)
-contour(daytime, daytime, varmat,
-        col=terrain.colors(12),
-        xlab="Day",
-        ylab="Day", lwd=2,
-        labcex=1)
+
+lims <- quantile(varmat, c(0.02, 0.98), na.rm = TRUE)
+varmat_clip <- pmin(pmax(varmat, lims[1]), lims[2])
+
+filled.contour(daytime, daytime, varmat_clip,
+               color.palette = terrain.colors,
+               xlab = "Day",
+               ylab = "Day")
 
 ############################################################
 # FUNCTIONAL DEPTH ANALYSIS, OUTLIERS, BOXPLOTS
@@ -360,3 +363,26 @@ cat(sprintf("R-squared    : %.4f\n", amp_phase$RSQR))
 #but the size and direction of each market's response varied substantially
 #across commodities — and that magnitude variation is what distinguishes 
 #the assets between one another.
+
+###########################################################################################
+#                         CLUSTERING
+###########################################################################################
+
+# K-means on FPCA scores — works fine with 10 curves
+scores_mat <- pcalist$scores   # 10 commodities x 4 harmonics
+
+set.seed(42)
+km <- kmeans(scores_mat[, 1:2], centers = 2, nstart = 20)
+
+plot(scores_mat[, 1], scores_mat[, 2],
+     col  = km$cluster,
+     pch  = 19,
+     cex  = 1.4,
+     xlab = "FPC1 (reaction intensity)",
+     ylab = "FPC2 (direction divergence)",
+     main = "Commodities clustered by FPCA scores")
+text(scores_mat[, 1], scores_mat[, 2],
+     labels = colnames(scaled_returns),
+     pos    = 3, cex = 0.8)
+abline(h = 0, v = 0, lty = 3, col = "grey60")
+
