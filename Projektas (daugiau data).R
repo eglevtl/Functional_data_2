@@ -534,3 +534,65 @@ stat_all <- Z.boot(x = ret_fd, t.seq = t.seq, mu = mu0,
 #However, a significant negative deviation appears around the event date, indicating a short-lived adverse market reaction
 #that quickly dissipates.
 
+########################################################################
+#### One sample L2_norm_based_test                                  ####
+########################################################################
+########################################################################
+
+source("items/trace.R")
+source("items/L2stat.R")
+
+# Test hypothesis, that the mean functional return is equal to zero
+# H0: mu(returns) = 0
+# H1: mu(returns) != 0
+# 
+stat <- L2.stat(x=ret_fd, t.seq = t.seq, mu0=mu0, replication = 500, method = 2)
+stat$pvalue
+
+# despite the short-lived nature of the effect observed in pointwise tests, the tariff announcement had a statistically 
+# significant overall impact on commodity returns.
+
+
+########################################################################
+#### Two sample pointwise-test                                      ####
+########################################################################
+
+source("items/Ztwosample.R")
+
+# Test hypothesis, that safe-haven and cyclical commodities 
+# have the same mean functional response to the tariff event
+
+# H0: mu(safe-haven) = mu(cyclical)
+# H1: mu(safe-haven) != mu(cyclical)
+
+stat_ztwosample <- Ztwosample(x = ret_fd[idx1], 
+                   y = ret_fd[idx2], 
+                   t.seq = t.seq)
+
+stat_ztwosample
+
+
+########################################################################
+#### Two sample L2-norm-based-test                                  ####
+########################################################################
+
+source("items/L2stattwosample.R")
+
+# Test hypothesis, that safe-haven and cyclical commodities 
+# have the same mean functional response (globally)
+
+# H0: mu(safe-haven) = mu(cyclical)
+# H1: mu(safe-haven) != mu(cyclical)
+# 
+stat_l2twosample <- L2.stat.twosample(x = ret_fd[idx1], 
+                          y = ret_fd[idx2], 
+                          t.seq = t.seq, 
+                          method = 2, 
+                          replications = 500)
+
+stat_l2twosample$pvalue
+
+#Both pointwise and L2 two-sample tests fail to reject the null hypothesis, indicating no statistically significant 
+#difference between safe-haven and cyclical commodities in their mean functional responses to the tariff announcement. 
+#This suggests that, despite observable differences in individual trajectories, the average behavior of the two groups 
+#is not significantly distinct.
