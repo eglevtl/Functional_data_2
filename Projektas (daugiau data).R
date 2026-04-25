@@ -446,39 +446,48 @@ cat(sprintf("R-squared    : %.4f\n", amp_phase$RSQR))
 #                         CLUSTERING
 ###########################################################################################
 
-# K-means on FPCA scores
-scores_mat <- pcalist$scores   # 10 commodities x 4 harmonics
+scores_mat <- pcalist$scores   # 20 commodities x 4 harmonics
 
-set.seed(42)
-km <- kmeans(scores_mat[, 1:2], centers = 2, nstart = 20)
+# Hierarchical clustering on first 2 FPC scores
+dist_mat  <- dist(scores_mat[, 1:2], method = "euclidean")
+hc        <- hclust(dist_mat, method = "ward.D2")
 
+plot(hc,
+     labels = colnames(scaled_returns),
+     main   = "Hierarchical clustering of commodities (FPC1 & FPC2)",
+     xlab   = "",
+     sub    = "",
+     ylab   = "Height")
+
+# Cut into 2 clusters
+hc_clusters <- cutree(hc, k = 2)
+
+# Scatter plot
 plot(scores_mat[, 1], scores_mat[, 2],
-     col  = km$cluster,
+     col  = hc_clusters,
      pch  = 19,
      cex  = 1.4,
      xlab = "FPC1 (reaction intensity)",
      ylab = "FPC2 (direction divergence)",
-     main = "Commodities clustered by FPCA scores")
+     main = "Commodities clustered by FPCA scores (hierarchical)")
 text(scores_mat[, 1], scores_mat[, 2],
      labels = colnames(scaled_returns),
      pos    = 3, cex = 0.8)
 abline(h = 0, v = 0, lty = 3, col = "grey60")
 
+# Cluster membership
 cluster_df <- data.frame(
   Commodity = colnames(scaled_returns),
-  Cluster   = factor(km$cluster),
+  Cluster   = factor(hc_clusters),
   FPC1      = scores_mat[, 1],
   FPC2      = scores_mat[, 2]
 )
 
 split(cluster_df$Commodity, cluster_df$Cluster)
 
-plot(pcalist$harmonics[1], main = "Harmonic 1")
-plot(pcalist$harmonics[2], main = "Harmonic 2")
-
-cluster1_idx <- which(km$cluster == 1)
-cluster2_idx <- which(km$cluster == 2)
-
+# Indices 
+cluster1_idx <- which(hc_clusters == 1)
+cluster2_idx <- which(hc_clusters == 2)
 
 plot_days <- seq(min(t_rel), max(t_rel), by = 1)
 
@@ -487,7 +496,6 @@ mat_c2 <- eval.fd(plot_days, ret_fd[cluster2_idx])
 
 # common y-axis
 ylim_common <- range(c(mat_c1, mat_c2), na.rm = TRUE)
-
 
 par(mfrow = c(1, 2))
 
@@ -667,7 +675,7 @@ sig_2sample_ranges <- sig_2sample_results %>%
 sig_2sample_ranges
 
 #Around the tariff announcement, the two groups behaved differently.
-#On April 2–3, Cluster 1 did worse than Cluster 2.
+#On April 1–5, Cluster 1 did worse than Cluster 2.
 #Cluster 1 is mostly physical commodities like gold, silver, copper, oil, wheat, 
 #corn, soybeans, and cotton. So this means that these commodity-style assets reacted 
 #more negatively right when the tariff news came out.
@@ -675,7 +683,7 @@ sig_2sample_ranges
 #Cluster 2, which includes currencies and the Treasury note, was more stable or 
 #performed better during those same days.
 
-#Then, from April 8–12, the pattern flipped.
+#Then, from April 8–13, the pattern flipped.
 #Cluster 1 started doing better than Cluster 2. This suggests that after the 
 #first negative shock, the commodity group recovered or bounced back.
 
