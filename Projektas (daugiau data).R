@@ -86,10 +86,10 @@ for(i in seq_along(nbasis_grid)){
     
   }
 }
-which(gcv_mat == min(gcv_mat), arr.ind = TRUE)
+best_idx    <- which(gcv_mat == min(gcv_mat), arr.ind = TRUE)
 
-best_nbasis <- nbasis_grid[15]
-best_lambda <- lambda_grid[27]
+best_nbasis <- nbasis_grid[best_idx[1, 1]]
+best_lambda <- lambda_grid[best_idx[1, 2]]
 
 best_nbasis
 best_lambda
@@ -446,7 +446,7 @@ cat(sprintf("R-squared    : %.4f\n", amp_phase$RSQR))
 #                         CLUSTERING
 ###########################################################################################
 
-# K-means on FPCA scores — works fine with 10 curves
+# K-means on FPCA scores
 scores_mat <- pcalist$scores   # 10 commodities x 4 harmonics
 
 set.seed(42)
