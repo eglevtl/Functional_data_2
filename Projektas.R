@@ -356,3 +356,116 @@ cat(sprintf("R-squared    : %.4f\n", amp_phase$RSQR))
 #but the size and direction of each market's response varied substantially
 #across commodities — and that magnitude variation is what distinguishes 
 #the assets between one another.
+
+###########################################################################################
+#                         CLUSTERING
+###########################################################################################
+
+
+# K-means on FPCA scores
+scores_mat <- pcalist$scores   # 20 commodities x 4 harmonics
+
+set.seed(42)
+km <- kmeans(scores_mat[, 1:2], centers = 2, nstart = 20)
+
+plot(scores_mat[, 1], scores_mat[, 2],
+     col  = km$cluster,
+     pch  = 19,
+     cex  = 1.4,
+     xlab = "FPC1 (reaction intensity)",
+     ylab = "FPC2 (direction divergence)",
+     main = "Commodities clustered by FPCA scores")
+text(scores_mat[, 1], scores_mat[, 2],
+     labels = colnames(scaled_returns),
+     pos    = 3, cex = 0.8)
+abline(h = 0, v = 0, lty = 3, col = "grey60")
+
+cluster_df <- data.frame(
+  Commodity = colnames(scaled_returns),
+  Cluster   = factor(km$cluster),
+  FPC1      = scores_mat[, 1],
+  FPC2      = scores_mat[, 2]
+)
+
+split(cluster_df$Commodity, cluster_df$Cluster)
+
+plot(pcalist$harmonics[1], main = "Harmonic 1")
+plot(pcalist$harmonics[2], main = "Harmonic 2")
+
+cluster1_idx <- which(km$cluster == 1)
+cluster2_idx <- which(km$cluster == 2)
+
+
+########################################################################
+#### One sample pointwise-bootstrap-test                            ####
+########################################################################
+
+source("items/Zboottest.R")
+
+mu0 <- fd(
+  matrix(0,
+         nrow = ret_fd$basis$nbasis,
+         ncol = 1),
+  ret_fd$basis
+)
+
+t.seq <- seq(min(t_rel), max(t_rel), by = 1)
+
+#H0: Commodity markets show no abnormal reaction to the tariff announcement 
+#(returns are consistent with normal fluctuations).
+
+#H1: There exists at least one time point where returns are significantly 
+#different from zero, indicating a market reaction.
+
+stat_all <- Z.boot(x = ret_fd, t.seq = t.seq, mu = mu0, 
+                   replication = 500, alpha = 0.05)
+
+stat_all$statistics
+stat_all$critical.value
+
+# Extract Z-statistics and critical values
+z <- as.numeric(stat_all$statistics[, 1])
+crit <- as.numeric(stat_all$critical.value)
+
+# Significant time points
+sig_idx <- which(abs(z) > crit)
+
+sig_results <- data.frame(
+  index = sig_idx,
+  time = t.seq[sig_idx],
+  z_statistic = z[sig_idx],
+  critical_value = crit[sig_idx],
+  direction = ifelse(z[sig_idx] > 0,
+                     "Positive abnormal return",
+                     "Negative abnormal return")
+)
+
+sig_results
+
+if (length(sig_idx) > 0) {
+  cat("Reject H0: significant abnormal reaction detected at one or more time points.\n")
+} else {
+  cat("Fail to reject H0: no significant abnormal reaction detected.\n")
+}
+
+#The one-sample pointwise bootstrap test shows that mean returns are not different from zero for most of the period. 
+#However, a significant negative deviation appears around the event date, indicating a short-lived adverse market reaction
+#that quickly dissipates.
+
+########################################################################
+#### One sample L2_norm_based_test                                  ####
+########################################################################
+########################################################################
+
+source("items/trace.R")
+source("items/L2stat.R")
+
+# Test hypothesis, that the mean functional return is equal to zero
+# H0: mu(returns) = 0
+# H1: mu(returns) != 0
+# 
+stat <- L2.stat(x=ret_fd, t.seq = t.seq, mu0=mu0, replication = 500, method = 2)
+stat$pvalue
+
+# despite the short-lived nature of the effect observed in pointwise tests, the tariff announcement had a statistically 
+# significant overall impact on commodity returns.
