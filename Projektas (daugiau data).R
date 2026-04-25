@@ -505,6 +505,9 @@ plot(ret_fd[cluster2_idx],
      ylab = "Scaled log return")
 abline(h = 0, v = 0, lty = 3, col = "grey60")
 
+ret_fd[cluster2_idx]$fdnames$Commodity
+ret_fd[cluster1_idx]$fdnames$Commodity
+
 
 ########################################################################
 #### One sample pointwise-bootstrap-test                            ####
@@ -533,6 +536,55 @@ stat_all <- Z.boot(x = ret_fd, t.seq = t.seq, mu = mu0,
 #The one-sample pointwise bootstrap test shows that mean returns are not different from zero for most of the period. 
 #However, a significant negative deviation appears around the event date, indicating a short-lived adverse market reaction
 #that quickly dissipates.
+
+stat_all$statistics
+stat_all$critical.value
+
+# Extract Z-statistics and critical values
+z <- as.numeric(stat_all$statistics[, 1])
+crit <- as.numeric(stat_all$critical.value)
+
+# Significant time points
+sig_idx <- which(abs(z) > crit)
+
+sig_results <- data.frame(
+  index = sig_idx,
+  time = t.seq[sig_idx],
+  z_statistic = z[sig_idx],
+  critical_value = crit[sig_idx],
+  direction = ifelse(z[sig_idx] > 0,
+                     "Positive abnormal return",
+                     "Negative abnormal return")
+)
+
+sig_results
+
+if (length(sig_idx) > 0) {
+  cat("Reject H0: significant abnormal reaction detected at one or more time points.\n")
+} else {
+  cat("Fail to reject H0: no significant abnormal reaction detected.\n")
+}
+
+sig_ranges <- sig_timepoints_dates %>%
+  arrange(time_point) %>%
+  mutate(group = cumsum(c(TRUE, diff(time_point) != 1))) %>%
+  group_by(group, direction) %>%
+  summarise(
+    start_date = min(date),
+    end_date = max(date),
+    .groups = "drop"
+  )
+
+sig_ranges
+
+#The most important result for your hypothesis is group 3:
+#The mean commodity return function shows a statistically significant negative 
+#deviation from zero from one day before to five days after the tariff announcement, 
+#covering 2025-04-01 to 2025-04-07. This indicates a short-term adverse abnormal 
+#reaction around the announcement date.
+
+#The pre-event positive periods may suggest anticipation, information leakage, 
+#or broader market repricing before the official announcement.
 
 ########################################################################
 #### One sample L2_norm_based_test                                  ####
@@ -565,12 +617,67 @@ source("items/Ztwosample.R")
 # H0: mu(safe-haven) = mu(cyclical)
 # H1: mu(safe-haven) != mu(cyclical)
 
+#DOING WITH HAND MADE CLUSTERS
+
 stat_ztwosample <- Ztwosample(x = ret_fd[idx1], 
                    y = ret_fd[idx2], 
                    t.seq = t.seq)
 
 stat_ztwosample
 
+#DOING WITH K-MEANS MADE CLUSTERS
+
+stat_ztwosample <- Ztwosample(x = ret_fd[cluster1_idx], 
+                              y = ret_fd[cluster2_idx], 
+                              t.seq = t.seq)
+
+stat_ztwosample
+
+crit2 <- stat_ztwosample$params$critical.value
+z2 <- as.numeric(stat_ztwosample$statistics.pointwise[, 1])
+
+z2 <- as.numeric(stat_ztwosample$statistics.pointwise[, 1])
+crit2 <- as.numeric(stat_ztwosample$params$critical.value)
+
+sig_idx_2sample <- which(abs(z2) > crit2)
+
+sig_2sample_results <- data.frame(
+  index = sig_idx_2sample,
+  time = t.seq[sig_idx_2sample],
+  date = event_date + t.seq[sig_idx_2sample],
+  z_statistic = z2[sig_idx_2sample],
+  critical_value = crit2,
+  direction = ifelse(z2[sig_idx_2sample] > 0,
+                     "Cluster 1 > Cluster 2",
+                     "Cluster 1 < Cluster 2")
+)
+
+sig_2sample_results
+
+sig_2sample_ranges <- sig_2sample_results %>%
+  arrange(time) %>%
+  mutate(group = cumsum(c(TRUE, diff(time) != 1))) %>%
+  group_by(group, direction) %>%
+  summarise(
+    start_date = min(date),
+    end_date   = max(date),
+    .groups = "drop"
+  )
+
+sig_2sample_ranges
+
+#Around the tariff announcement, the two groups behaved differently.
+#On April 2–3, Cluster 1 did worse than Cluster 2.
+#Cluster 1 is mostly physical commodities like gold, silver, copper, oil, wheat, 
+#corn, soybeans, and cotton. So this means that these commodity-style assets reacted 
+#more negatively right when the tariff news came out.
+
+#Cluster 2, which includes currencies and the Treasury note, was more stable or 
+#performed better during those same days.
+
+#Then, from April 8–12, the pattern flipped.
+#Cluster 1 started doing better than Cluster 2. This suggests that after the 
+#first negative shock, the commodity group recovered or bounced back.
 
 ########################################################################
 #### Two sample L2-norm-based-test                                  ####
@@ -583,12 +690,14 @@ source("items/L2stattwosample.R")
 
 # H0: mu(safe-haven) = mu(cyclical)
 # H1: mu(safe-haven) != mu(cyclical)
-# 
+
+#DOING WITH HAND MADE CLUSTERS
+
 stat_l2twosample <- L2.stat.twosample(x = ret_fd[idx1], 
-                          y = ret_fd[idx2], 
-                          t.seq = t.seq, 
-                          method = 2, 
-                          replications = 500)
+                                      y = ret_fd[idx2], 
+                                      t.seq = t.seq, 
+                                      method = 2, 
+                                      replications = 500)
 
 stat_l2twosample$pvalue
 
@@ -596,3 +705,18 @@ stat_l2twosample$pvalue
 #difference between safe-haven and cyclical commodities in their mean functional responses to the tariff announcement. 
 #This suggests that, despite observable differences in individual trajectories, the average behavior of the two groups 
 #is not significantly distinct.
+
+#DOING WITH K-MEANS MADE CLUSTERS
+
+stat_l2twosample <- L2.stat.twosample(x = ret_fd[cluster1_idx], 
+                          y = ret_fd[cluster2_idx], 
+                          t.seq = t.seq, 
+                          method = 2, 
+                          replications = 500)
+
+stat_l2twosample$pvalue
+
+#The two clusters do not behave the same over the event window. Their average return 
+#patterns are statistically different.
+#The pointwise Z-test tells you when the clusters differed, such as April 2–3 and April 8–12.
+#The L2 two-sample test tells you that, overall, the two clusters have different return curves.
