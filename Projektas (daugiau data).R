@@ -614,6 +614,24 @@ stat$pvalue
 
 
 ########################################################################
+#### One sample F-type-test                                         ####
+########################################################################
+
+source("items/trace.R")
+source("items/Fstat.R")
+
+# Test hypothesis that the mean functional return is equal to zero
+# H0: mu(returns) = 0
+# H1: mu(returns) != 0
+
+stat <- F.stat(x=ret_fd, t.seq = t.seq, mu0=mu0, replication = 500, method=2)
+stat
+stat$pvalue
+
+#p- value 0.004<0.05, therefore null hypothesis is rejected, 
+#mean functional returns are not equal to 0
+
+########################################################################
 #### Two sample pointwise-test                                      ####
 ########################################################################
 
@@ -633,7 +651,7 @@ stat_ztwosample <- Ztwosample(x = ret_fd[idx1],
 
 stat_ztwosample
 
-#DOING WITH K-MEANS MADE CLUSTERS
+#DOING WITH HIERRARCHICAL CLUSTERING MADE CLUSTERS
 
 stat_ztwosample <- Ztwosample(x = ret_fd[cluster1_idx], 
                               y = ret_fd[cluster2_idx], 
@@ -704,7 +722,7 @@ source("items/L2stattwosample.R")
 stat_l2twosample <- L2.stat.twosample(x = ret_fd[idx1], 
                                       y = ret_fd[idx2], 
                                       t.seq = t.seq, 
-                                      method = 2, 
+                                      method = 1, 
                                       replications = 500)
 
 stat_l2twosample$pvalue
@@ -714,17 +732,69 @@ stat_l2twosample$pvalue
 #This suggests that, despite observable differences in individual trajectories, the average behavior of the two groups 
 #is not significantly distinct.
 
-#DOING WITH K-MEANS MADE CLUSTERS
+#DOING WITH HIERRARCHICAL CLUSTERING MADE CLUSTERS
 
 stat_l2twosample <- L2.stat.twosample(x = ret_fd[cluster1_idx], 
                           y = ret_fd[cluster2_idx], 
                           t.seq = t.seq, 
-                          method = 2, 
+                          method = 1, 
                           replications = 500)
 
 stat_l2twosample$pvalue
 
+#with method 1 - p value 0.0002, hypothesis rejected, means noy equal
 #The two clusters do not behave the same over the event window. Their average return 
 #patterns are statistically different.
 #The pointwise Z-test tells you when the clusters differed, such as April 2–3 and April 8–12.
 #The L2 two-sample test tells you that, overall, the two clusters have different return curves.
+
+
+
+########################################################################
+#### Two sample F-type-test                                         ####
+########################################################################
+source("items/Fstattwosample.R")
+#DOING WITH HAND MADE CLUSTERS
+# H0: mu(safe-haven) = mu(cyclical)
+# H1: mu(safe-haven) != mu(cyclical)
+
+stat_l2twosample <- F.stat.twosample(x = ret_fd[idx1], 
+                                      y = ret_fd[idx2], 
+                                      t.seq = t.seq, 
+                                      method = 1, 
+                                      replications = 500)
+
+stat_l2twosample$pvalue
+
+#pvalue 0.94.. not rejected null hypothesis no difference.
+
+#DOING WITH HIERRARCHICAL CLUSTERING CLUSTERS
+
+
+stat <- F.stat.twosample(x = ret_fd[cluster1_idx], 
+                         y = ret_fd[cluster2_idx], 
+                         t.seq = t.seq, 
+                         method = 1, 
+                         replications = 500)
+stat
+stat$pvalue
+
+#p-value 0.0006<0.05, null hypothesis rejected, the mean returns of both groups differ
+
+
+########################################################################
+####??????????????? Two sample permutation test    ????????????????                                ####
+########################################################################
+#HAND MADE CLUSTERS
+stat <- tperm.fd(ret_fd[idx1], ret_fd[idx2])
+stat
+stat$pval
+
+#pvalue 0.22, not rejected, no diff, graph looks weird, at 0 very low observed statistic
+
+#DOING WITH HIERRARCHICAL CLUSTERING CLUSTERS
+stat <- tperm.fd(ret_fd[cluster1_idx], ret_fd[cluster2_idx])
+stat
+stat$pval
+
+#pvalue 0
