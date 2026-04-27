@@ -156,62 +156,62 @@ print(data.frame(pre_mean, post_mean))
 
 
 
-group1 <- c(
-  "Gold", "Silver", "US_Dollar_Index", "Japanese_Yen",
-  "Swiss_Franc", "Euro", "10-Year_Treasury_Note","Palladium", "Platinum"
-)
-
-group2 <- c(
-  "Copper", "Aluminum", "Gasoline",
-  "Crude_Oil", "Natural_Gas", "Wheat", "Corn", "Soybeans",
-  "Coffee", "Sugar", "Cotton"
-)
-
-all_names <- colnames(scaled_returns)
-
-idx1 <- match(group1, all_names)
-idx2 <- match(group2, all_names)
-
-par(mfrow = c(1, 2))
-
-plot(ret_fd[idx1],
-     main = "Smoothed curves: Group 1",
-     xlab = "Days relative to tariff announcement",
-     ylab = "Scaled log return")
-abline(h = 0, v = 0, lty = 3, col = "grey60")
-
-plot(ret_fd[idx2],
-     main = "Smoothed curves: Group 2",
-     xlab = "Days relative to tariff announcement",
-     ylab = "Scaled log return")
-abline(h = 0, v = 0, lty = 3, col = "grey60")
-
-idx1 <- match(group1, all_names)
-idx2 <- match(group2, all_names)
-
-# evaluate both groups on a common grid to get one shared y-scale
-plot_days <- seq(min(t_rel), max(t_rel), by = 1)
-
-mat_g1 <- eval.fd(plot_days, ret_fd[idx1])
-mat_g2 <- eval.fd(plot_days, ret_fd[idx2])
-
-ylim_common <- range(c(mat_g1, mat_g2), na.rm = TRUE)
-
-par(mfrow = c(1, 2))
-
-plot(ret_fd[idx1],
-     ylim = ylim_common,
-     main = "Smoothed curves: Group 1 (Safe-haven)",
-     xlab = "Days relative to tariff announcement",
-     ylab = "Scaled log return")
-abline(h = 0, v = 0, lty = 3, col = "grey60")
-
-plot(ret_fd[idx2],
-     ylim = ylim_common,
-     main = "Smoothed curves: Group 2 (Cyclical)",
-     xlab = "Days relative to tariff announcement",
-     ylab = "Scaled log return")
-abline(h = 0, v = 0, lty = 3, col = "grey60")
+# group1 <- c(
+#   "Gold", "Silver", "US_Dollar_Index", "Japanese_Yen",
+#   "Swiss_Franc", "Euro", "10-Year_Treasury_Note","Palladium", "Platinum"
+# )
+# 
+# group2 <- c(
+#   "Copper", "Aluminum", "Gasoline",
+#   "Crude_Oil", "Natural_Gas", "Wheat", "Corn", "Soybeans",
+#   "Coffee", "Sugar", "Cotton"
+# )
+# 
+# all_names <- colnames(scaled_returns)
+# 
+# idx1 <- match(group1, all_names)
+# idx2 <- match(group2, all_names)
+# 
+# par(mfrow = c(1, 2))
+# 
+# plot(ret_fd[idx1],
+#      main = "Smoothed curves: Group 1",
+#      xlab = "Days relative to tariff announcement",
+#      ylab = "Scaled log return")
+# abline(h = 0, v = 0, lty = 3, col = "grey60")
+# 
+# plot(ret_fd[idx2],
+#      main = "Smoothed curves: Group 2",
+#      xlab = "Days relative to tariff announcement",
+#      ylab = "Scaled log return")
+# abline(h = 0, v = 0, lty = 3, col = "grey60")
+# 
+# idx1 <- match(group1, all_names)
+# idx2 <- match(group2, all_names)
+# 
+# # evaluate both groups on a common grid to get one shared y-scale
+# plot_days <- seq(min(t_rel), max(t_rel), by = 1)
+# 
+# mat_g1 <- eval.fd(plot_days, ret_fd[idx1])
+# mat_g2 <- eval.fd(plot_days, ret_fd[idx2])
+# 
+# ylim_common <- range(c(mat_g1, mat_g2), na.rm = TRUE)
+# 
+# par(mfrow = c(1, 2))
+# 
+# plot(ret_fd[idx1],
+#      ylim = ylim_common,
+#      main = "Smoothed curves: Group 1 (Safe-haven)",
+#      xlab = "Days relative to tariff announcement",
+#      ylab = "Scaled log return")
+# abline(h = 0, v = 0, lty = 3, col = "grey60")
+# 
+# plot(ret_fd[idx2],
+#      ylim = ylim_common,
+#      main = "Smoothed curves: Group 2 (Cyclical)",
+#      xlab = "Days relative to tariff announcement",
+#      ylab = "Scaled log return")
+# abline(h = 0, v = 0, lty = 3, col = "grey60")
 
 
 
@@ -356,11 +356,11 @@ colnames(lgp)[2]
 nharm = 4
 pcalist = pca.fd(ret_fd, nharm, centerfns = TRUE)
 pcalist$varprop
-cumsum(pcalist$varprop) #the choice of 4 harmonics is good because the cumulative variation is around 95%, which means that 
+cumsum(pcalist$varprop) #the choice of 4 harmonics is good because the cumulative variation is around 72.6%, which means that 
 #most of variation is explained, another harmonic would probably catch mostely noise and only 3 harmonics would
 #explain too little of teh total variance.
 
-par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+
 plot(pcalist)
 plot(pcalist$harmonics)
 #PCA1: This component captures the general intensity of the response to tariffs.
@@ -426,7 +426,7 @@ cat(sprintf("Phase MS     : %.4f (%.1f%%)\n", amp_phase$MS.pha, 100 * amp_phase$
 cat(sprintf("R-squared    : %.4f\n", amp_phase$RSQR))
 
 #Result: 
-#85% amplitude, 15% phase — the dominant source of variation across commodity curves 
+#98.6% amplitude, 1.4% phase — the dominant source of variation across commodity curves 
 #is how much they moved, not when they moved. Commodities reacted to the tariff 
 #announcement at roughly similar times, but with very different magnitudes. 
 #Some shot up strongly, others dropped sharply, others barely moved — but they all 
