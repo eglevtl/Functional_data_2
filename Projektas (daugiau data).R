@@ -55,8 +55,10 @@ plot(
   main = ""
 )
 
+event_index <- which(t_rel == 0)
+abline(v = event_index, col = "red", lwd = 2)
 
-Lfd_obj <- int2Lfd(0)
+Lfd_obj <- int2Lfd(2)
 
 ###########################################################################################
 #                                     SMOOTHING
@@ -67,7 +69,7 @@ Lfd_obj <- int2Lfd(0)
 ############################################
 
 # 4) GCV for lambda and basis selection:
-nbasis_grid <- seq(6,21,1)
+nbasis_grid <- seq(7,20,1)
 lambda_grid <- 10^seq(-2, 10, length.out = 100)
 
 gcv_mat <- matrix(NA,length(nbasis_grid),length(lambda_grid))
