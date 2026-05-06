@@ -180,6 +180,31 @@ contour(daytime, daytime, varmat,
         ylab="Day", lwd=2,
         labcex=1)
 
+##wrong:
+
+
+#Compute the functional variance–covariance surface
+
+var_cov_ret = var.fd(ret_fd)
+
+days        = seq(min(t_rel), max(t_rel),length=60)
+var_mat  = eval.bifd(days, days,
+                     var_cov_ret)
+
+# Corelation graph 
+
+daytime = seq(min(t_rel), max(t_rel),1)
+varmat = eval.bifd(daytime, daytime,
+                   var_cov_ret)
+
+lims <- quantile(varmat, c(0.02, 0.98), na.rm = TRUE)
+varmat_clip <- pmin(pmax(varmat, lims[1]), lims[2])
+
+filled.contour(daytime, daytime, varmat_clip,
+               color.palette = terrain.colors,
+               xlab = "Day",
+               ylab = "Day")
+
 ############################################################
 # FUNCTIONAL DEPTH ANALYSIS, OUTLIERS, BOXPLOTS
 ############################################################
