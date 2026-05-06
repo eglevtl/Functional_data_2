@@ -5,6 +5,7 @@ library(tidyr)
 library(fda)
 library(fda.usc)
 library(fdaoutlier)
+library(RColorBrewer)
 
 ###########################################################################################
 #                                     DATASET PREPARATION
@@ -258,14 +259,14 @@ var_mat  = eval.bifd(days, days,
 daytime = seq(min(t_rel), max(t_rel),1)
 varmat = eval.bifd(daytime, daytime,
                    var_cov_ret)
+rdblue <- colorRampPalette(rev(brewer.pal(11, "RdBu")))
 
-lims <- quantile(varmat, c(0.02, 0.98), na.rm = TRUE)
-varmat_clip <- pmin(pmax(varmat, lims[1]), lims[2])
-
-filled.contour(daytime, daytime, varmat_clip,
-               color.palette = terrain.colors,
+filled.contour(daytime, daytime, varmat,
+               color.palette = rdblue,
                xlab = "Day",
-               ylab = "Day")
+               ylab = "Day",
+               main = "",
+               key.title = title(main = "Cov"))
 
 ############################################################
 # FUNCTIONAL DEPTH ANALYSIS, OUTLIERS, BOXPLOTS
@@ -279,7 +280,11 @@ plot(fdataobj, lwd = 2,
      xlab = "Days relative to tariff announcement",
      ylab = "Standardized log return (smoothed)")
 
-par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+layout(matrix(c(1,1,2,2,
+                0,3,3,0), 
+              nrow = 2, byrow = TRUE))
+
+par(mar = c(4,4,2,1))
 # Fraiman-Muniz depth
 out.FM <- depth.FM(fdataobj, trim = 0.1, draw = TRUE)
 
@@ -288,68 +293,58 @@ out.mode <- depth.mode(fdataobj, trim = 0.1, draw = TRUE)
 
 # Random projection depth
 out.RP <- depth.RP(fdataobj, trim = 0.1, draw = TRUE)
+layout(1)
 par(mfrow = c(1, 1))
 
+################functional depth and outlier detection####################
 # functional boxplot
 boxplot(ret_fd)
 
-# evaluate functions
+#evaluate functions
 lgp <- eval.fd(tt, ret_fd)
 
-# band depth
-bd <- band_depth(t(lgp))
-names(bd) <- colnames(lgp)
-plot(bd, type = "l")
-
-# modified band depth
+#Compute Modified Band Depth scores
 mbd <- modified_band_depth(t(lgp))
 names(mbd) <- colnames(lgp)
 plot(mbd, type = "l")
 
-#Curve 8 is the most central function
-#The other curves are less central but very similar to each other. 
-#So the data appears very symmetric, with one curve clearly sitting in the middle of the band.
-
-# functional boxplot + outliers
+#Use MBD to detect functional outliers
 fbplot_obj <- functional_boxplot(t(lgp), depth_method = "mbd")
 fbplot_obj$outliers
 
-#flagged outliers are curves: 5, 6, 7, 9
+#flagged outlier is curve: 16
 
-# MUOD outlier detection
+#MUOD outlier detection
 m <- muod(t(lgp), cut_method = "boxplot")
 m$outliers
-matplot(tt, lgp, type="l", lty=1)
-lines(tt, lgp[,5], col="red", lwd=3)   # shape/amplitude outlier
-lines(tt, lgp[,2], col="blue", lwd=3)  # magnitude outlier
+
+#Plot all curves and highlight Corn
+matplot(tt, lgp, type = "l", lty = 1, col = "grey",
+        xlab = "Time",
+        ylab = "Standardized log returns")
+
+lines(tt, lgp[,16], col = "red", lwd = 3)    # Corn: MBD outlier
+lines(tt, lgp[,17], col = "blue", lwd = 3)   # Soybeans: functional median
 
 legend("topright",
-       legend = colnames(lgp)[c(5, 2)],
+       legend = c("Corn: MBD outlier", "Soybeans: functional median"),
        col = c("red", "blue"),
        lwd = 3,
        cex = 0.8)
 
-# functional boxplot visualization
+#Functional boxplot visualization using MBD
 fbplot(lgp, method = "MBD",
        xaxt = "n",
        main = "Functional boxplot using Modified Band Depth",
        xlab = "Days relative to event (t)",
        ylab = "Standardized log returns")
 
-# norimos dienos grafike
 ticks <- c(-20, 0, 20, 40, 60)
-
-# artimiausi grafikai
 tick_pos <- sapply(ticks, function(x) which.min(abs(t_rel - x)))
-
-#asis
 axis(1,
      at = tick_pos,
      labels = ticks)
 
-colnames(lgp)
-colnames(lgp)[5]
-colnames(lgp)[2]
 
 ###############################################
 #PRINCIPAL COMPONENTS ANALYSIS
