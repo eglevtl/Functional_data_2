@@ -505,10 +505,6 @@ t.seq <- seq(min(t_rel), max(t_rel), by = 1)
 stat_all <- Z.boot(x = ret_fd, t.seq = t.seq, mu = mu0, 
   replication = 500, alpha = 0.05)
 
-#The one-sample pointwise bootstrap test shows that mean returns are not different from zero for most of the period. 
-#However, a significant negative deviation appears around the event date, indicating a short-lived adverse market reaction
-#that quickly dissipates.
-
 stat_all$statistics
 stat_all$critical.value
 
@@ -522,6 +518,7 @@ sig_idx <- which(abs(z) > crit)
 sig_results <- data.frame(
   index = sig_idx,
   time = t.seq[sig_idx],
+  date = event_date + t.seq[sig_idx],
   z_statistic = z[sig_idx],
   critical_value = crit[sig_idx],
   direction = ifelse(z[sig_idx] > 0,
@@ -537,11 +534,13 @@ if (length(sig_idx) > 0) {
   cat("Fail to reject H0: no significant abnormal reaction detected.\n")
 }
 
-sig_ranges <- sig_timepoints_dates %>%
-  arrange(time_point) %>%
-  mutate(group = cumsum(c(TRUE, diff(time_point) != 1))) %>%
+sig_ranges <- sig_results %>%
+  arrange(time) %>%
+  mutate(group = cumsum(c(TRUE, diff(time) != 1))) %>%
   group_by(group, direction) %>%
   summarise(
+    start_day = min(time),
+    end_day = max(time),
     start_date = min(date),
     end_date = max(date),
     .groups = "drop"
@@ -549,18 +548,8 @@ sig_ranges <- sig_timepoints_dates %>%
 
 sig_ranges
 
-#The most important result for your hypothesis is group 3:
-#The mean commodity return function shows a statistically significant negative 
-#deviation from zero from one day before to five days after the tariff announcement, 
-#covering 2025-04-01 to 2025-04-07. This indicates a short-term adverse abnormal 
-#reaction around the announcement date.
-
-#The pre-event positive periods may suggest anticipation, information leakage, 
-#or broader market repricing before the official announcement.
-
 ########################################################################
 #### One sample L2_norm_based_test                                  ####
-########################################################################
 ########################################################################
 
 source("items/trace.R")
@@ -572,10 +561,6 @@ source("items/L2stat.R")
 # 
 stat <- L2.stat(x=ret_fd, t.seq = t.seq, mu0=mu0, replication = 500, method = 2)
 stat$pvalue
-
-# despite the short-lived nature of the effect observed in pointwise tests, the tariff announcement had a statistically 
-# significant overall impact on commodity returns.
-
 
 ########################################################################
 #### One sample F-type-test                                         ####
@@ -592,30 +577,16 @@ stat <- F.stat(x=ret_fd, t.seq = t.seq, mu0=mu0, replication = 500, method=2)
 stat
 stat$pvalue
 
-#p- value 0.004<0.05, therefore null hypothesis is rejected, 
-#mean functional returns are not equal to 0
-
 ########################################################################
 #### Two sample pointwise-test                                      ####
 ########################################################################
 
 source("items/Ztwosample.R")
 
-# Test hypothesis, that safe-haven and cyclical commodities 
-# have the same mean functional response to the tariff event
+# Test hypothesis, that  Metals and Agricultural Commodities and Currencies and Soft Commodities have the same mean functional response to the tariff event
 
-# H0: mu(safe-haven) = mu(cyclical)
-# H1: mu(safe-haven) != mu(cyclical)
-
-#DOING WITH HAND MADE CLUSTERS
-
-stat_ztwosample <- Ztwosample(x = ret_fd[idx1], 
-                   y = ret_fd[idx2], 
-                   t.seq = t.seq)
-
-stat_ztwosample
-
-#DOING WITH HIERRARCHICAL CLUSTERING MADE CLUSTERS
+# H0: mu(cluster 1) = mu(cluster 2)
+# H1: mu(cluster 1) != mu(cluster 2)
 
 stat_ztwosample <- Ztwosample(x = ret_fd[cluster1_idx], 
                               y = ret_fd[cluster2_idx], 
@@ -656,47 +627,16 @@ sig_2sample_ranges <- sig_2sample_results %>%
 
 sig_2sample_ranges
 
-#Around the tariff announcement, the two groups behaved differently.
-#On April 1–5, Cluster 1 did worse than Cluster 2.
-#Cluster 1 is mostly physical commodities like gold, silver, copper, oil, wheat, 
-#corn, soybeans, and cotton. So this means that these commodity-style assets reacted 
-#more negatively right when the tariff news came out.
-
-#Cluster 2, which includes currencies and the Treasury note, was more stable or 
-#performed better during those same days.
-
-#Then, from April 8–13, the pattern flipped.
-#Cluster 1 started doing better than Cluster 2. This suggests that after the 
-#first negative shock, the commodity group recovered or bounced back.
-
 ########################################################################
 #### Two sample L2-norm-based-test                                  ####
 ########################################################################
 
 source("items/L2stattwosample.R")
 
-# Test hypothesis, that safe-haven and cyclical commodities 
-# have the same mean functional response (globally)
+# Test hypothesis, that Metals and Agricultural Commodities and Currencies and Soft Commodities have the same mean functional response (globally)
 
-# H0: mu(safe-haven) = mu(cyclical)
-# H1: mu(safe-haven) != mu(cyclical)
-
-#DOING WITH HAND MADE CLUSTERS
-
-stat_l2twosample <- L2.stat.twosample(x = ret_fd[idx1], 
-                                      y = ret_fd[idx2], 
-                                      t.seq = t.seq, 
-                                      method = 1, 
-                                      replications = 500)
-
-stat_l2twosample$pvalue
-
-#Both pointwise and L2 two-sample tests fail to reject the null hypothesis, indicating no statistically significant 
-#difference between safe-haven and cyclical commodities in their mean functional responses to the tariff announcement. 
-#This suggests that, despite observable differences in individual trajectories, the average behavior of the two groups 
-#is not significantly distinct.
-
-#DOING WITH HIERRARCHICAL CLUSTERING MADE CLUSTERS
+# H0: mu(cluster 1) = mu(cluster 2)
+# H1: mu(cluster 1) != mu(cluster 2)
 
 stat_l2twosample <- L2.stat.twosample(x = ret_fd[cluster1_idx], 
                           y = ret_fd[cluster2_idx], 
@@ -706,34 +646,10 @@ stat_l2twosample <- L2.stat.twosample(x = ret_fd[cluster1_idx],
 
 stat_l2twosample$pvalue
 
-#with method 1 - p value 0.0002, hypothesis rejected, means noy equal
-#The two clusters do not behave the same over the event window. Their average return 
-#patterns are statistically different.
-#The pointwise Z-test tells you when the clusters differed, such as April 2–3 and April 8–12.
-#The L2 two-sample test tells you that, overall, the two clusters have different return curves.
-
-
-
 ########################################################################
 #### Two sample F-type-test                                         ####
 ########################################################################
 source("items/Fstattwosample.R")
-#DOING WITH HAND MADE CLUSTERS
-# H0: mu(safe-haven) = mu(cyclical)
-# H1: mu(safe-haven) != mu(cyclical)
-
-stat_l2twosample <- F.stat.twosample(x = ret_fd[idx1], 
-                                      y = ret_fd[idx2], 
-                                      t.seq = t.seq, 
-                                      method = 1, 
-                                      replications = 500)
-
-stat_l2twosample$pvalue
-
-#pvalue 0.94.. not rejected null hypothesis no difference.
-
-#DOING WITH HIERRARCHICAL CLUSTERING CLUSTERS
-
 
 stat <- F.stat.twosample(x = ret_fd[cluster1_idx], 
                          y = ret_fd[cluster2_idx], 
@@ -742,9 +658,6 @@ stat <- F.stat.twosample(x = ret_fd[cluster1_idx],
                          replications = 500)
 stat
 stat$pvalue
-
-#p-value 0.0006<0.05, null hypothesis rejected, the mean returns of both groups differ
-
 
 ########################################################################
 ####??????????????? Two sample permutation test    ????????????????                                ####
