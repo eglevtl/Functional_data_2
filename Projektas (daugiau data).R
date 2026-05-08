@@ -357,7 +357,7 @@ cumsum(pcalist$varprop) #the choice of 4 harmonics is good because the cumulativ
 #most of variation is explained, another harmonic would probably catch mostely noise and only 3 harmonics would
 #explain too little of teh total variance.
 
-
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
 plot(pcalist)
 plot(pcalist$harmonics)
 #PCA1: This component captures the general intensity of the response to tariffs.
@@ -375,30 +375,13 @@ plot(varmx)
 #PCA2: reflects differences in the timing of reactions. Some react right when tariffs are announced, some have delayed reaction, or more gradual reaction.
 #PCA3: capture commodities most sensitive to trade policy. Like: industrial commodities (copper), energy (oil).
 #PCA4: this explains only a small fraction of variation. Small commodity-specific fluctuations, minor delayed reactions.
+par(mfrow = c(1, 1))
 
 plot(varmx$harmonics)
-
 
 ###########################################################################################
 #                         AMPLITUDE & PHASE DECOMPOSITION
 ###########################################################################################
-# Amplitude variation — did commodities react with different magnitudes? 
-#(gold up a lot, copper down a lot)
-
-#Phase variation — did they react at different times? 
-#(some spiked on day −3 anticipating the news, others lagged to day +5)
-
-#Warping meaning:
-#A simple example: suppose copper and gold both have a dip after the announcement, 
-#but copper's dip happens at day +2 and gold's at day +4. If you warp gold's time 
-#axis — squeezing it slightly — gold's dip shifts to day +2 and now both curves 
-#align. The warping function records exactly how much you had to squeeze or 
-#stretch each commodity's time axis to achieve that alignment.
-
-#In the results this turned out to matter very little (only 15% phase variation), 
-#meaning the curves were already well aligned in time and barely needed any warping — 
-#makes intuitive sense, since all commodities reacted to the same single public 
-#announcement on the same day.
 
 # Registration (needed to run AmpPhaseDecomp)
 wbasis_CR <- create.bspline.basis(range_t, norder = 3,
@@ -422,22 +405,6 @@ cat(sprintf("Amplitude MS : %.4f (%.1f%%)\n", amp_phase$MS.amp, 100 * amp_phase$
 cat(sprintf("Phase MS     : %.4f (%.1f%%)\n", amp_phase$MS.pha, 100 * amp_phase$MS.pha / (amp_phase$MS.amp + amp_phase$MS.pha)))
 cat(sprintf("R-squared    : %.4f\n", amp_phase$RSQR))
 
-#Result: 
-#98.6% amplitude, 1.4% phase — the dominant source of variation across commodity curves 
-#is how much they moved, not when they moved. Commodities reacted to the tariff 
-#announcement at roughly similar times, but with very different magnitudes. 
-#Some shot up strongly, others dropped sharply, others barely moved — but they all 
-#did it at approximately the same moment.
-
-#The R-squared of 0.15 measures how much of the total variation registration actually 
-#managed to remove by time-warping. A value of 0.15 means registration explained very 
-#little — the curves were already well-aligned in time before registration, 
-#so there wasn't much phase variation to remove in the first place. 
-
-#In Conclusion: the tariff shock hit all commodity markets at the same time 
-#but the size and direction of each market's response varied substantially
-#across commodities — and that magnitude variation is what distinguishes 
-#the assets between one another.
 
 ###########################################################################################
 #                         CLUSTERING
