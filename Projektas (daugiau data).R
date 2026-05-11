@@ -148,84 +148,6 @@ pre_mean  <- colMeans(scaled_returns[idx_pre, , drop = FALSE])
 post_mean <- colMeans(scaled_returns[idx_post, , drop = FALSE])
 print(data.frame(pre_mean, post_mean))
 
-
-
-
-###########################################################################################
-#                           GRAPH SPLITTING BY HAND MADE GROUP
-###########################################################################################
-
-
-
-
-
-# group1 <- c(
-#   "Gold", "Silver", "US_Dollar_Index", "Japanese_Yen",
-#   "Swiss_Franc", "Euro", "10-Year_Treasury_Note","Palladium", "Platinum"
-# )
-# 
-# group2 <- c(
-#   "Copper", "Aluminum", "Gasoline",
-#   "Crude_Oil", "Natural_Gas", "Wheat", "Corn", "Soybeans",
-#   "Coffee", "Sugar", "Cotton"
-# )
-# 
-# all_names <- colnames(scaled_returns)
-# 
-# idx1 <- match(group1, all_names)
-# idx2 <- match(group2, all_names)
-# 
-# par(mfrow = c(1, 2))
-# 
-# plot(ret_fd[idx1],
-#      main = "Smoothed curves: Group 1",
-#      xlab = "Days relative to tariff announcement",
-#      ylab = "Scaled log return")
-# abline(h = 0, v = 0, lty = 3, col = "grey60")
-# 
-# plot(ret_fd[idx2],
-#      main = "Smoothed curves: Group 2",
-#      xlab = "Days relative to tariff announcement",
-#      ylab = "Scaled log return")
-# abline(h = 0, v = 0, lty = 3, col = "grey60")
-# 
-# idx1 <- match(group1, all_names)
-# idx2 <- match(group2, all_names)
-# 
-# # evaluate both groups on a common grid to get one shared y-scale
-# plot_days <- seq(min(t_rel), max(t_rel), by = 1)
-# 
-# mat_g1 <- eval.fd(plot_days, ret_fd[idx1])
-# mat_g2 <- eval.fd(plot_days, ret_fd[idx2])
-# 
-# ylim_common <- range(c(mat_g1, mat_g2), na.rm = TRUE)
-# 
-# par(mfrow = c(1, 2))
-# 
-# plot(ret_fd[idx1],
-#      ylim = ylim_common,
-#      main = "Smoothed curves: Group 1 (Safe-haven)",
-#      xlab = "Days relative to tariff announcement",
-#      ylab = "Scaled log return")
-# abline(h = 0, v = 0, lty = 3, col = "grey60")
-# 
-# plot(ret_fd[idx2],
-#      ylim = ylim_common,
-#      main = "Smoothed curves: Group 2 (Cyclical)",
-#      xlab = "Days relative to tariff announcement",
-#      ylab = "Scaled log return")
-# abline(h = 0, v = 0, lty = 3, col = "grey60")
-
-
-
-
-
-
-
-
-
-
-
 ###########################################################################################
 #                             EXPLOARATORY DATA ANALYSIS
 ###########################################################################################
@@ -360,21 +282,11 @@ cumsum(pcalist$varprop) #the choice of 4 harmonics is good because the cumulativ
 par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
 plot(pcalist)
 plot(pcalist$harmonics)
-#PCA1: This component captures the general intensity of the response to tariffs.
-#PCA2: This component likely separates commodities reacting in opposite directions.Captures the divergence 
-#between commodities benefiting from geopolitical uncertainty and those sensitive to trade restrictions.
-#PCA3: This component reflects when commodities reacted. Some commodities react immediately, 
-#others adjust several days after the announcement.
-#PCA4: Explains little of the total variance and is probably related to short-trem fluctuations and comodity specific noise.
 
 #Rotation
 varmx <- varmx.pca.fd(pcalist)
 plot(varmx)
-#PCA1: mainly reflects pre-announcement vs post-announcement movements - mainly magnitude. From the shape: 
-#moderate change before event, stronger movement afterward
-#PCA2: reflects differences in the timing of reactions. Some react right when tariffs are announced, some have delayed reaction, or more gradual reaction.
-#PCA3: capture commodities most sensitive to trade policy. Like: industrial commodities (copper), energy (oil).
-#PCA4: this explains only a small fraction of variation. Small commodity-specific fluctuations, minor delayed reactions.
+
 par(mfrow = c(1, 1))
 
 plot(varmx$harmonics)
@@ -660,7 +572,7 @@ stat
 stat$pvalue
 
 ########################################################################
-####??????????????? Two sample permutation test    ????????????????                                ####
+####??????????????? Two sample permutation test    ????????????????   
 ########################################################################
 #HAND MADE CLUSTERS
 stat <- tperm.fd(ret_fd[idx1], ret_fd[idx2])
