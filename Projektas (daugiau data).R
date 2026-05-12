@@ -6,6 +6,10 @@ library(fda)
 library(fda.usc)
 library(fdaoutlier)
 library(RColorBrewer)
+library(refund)
+library(ggplot2)
+library(gridExtra)
+library(reshape2)
 
 ###########################################################################################
 #                                     DATASET PREPARATION
@@ -587,3 +591,380 @@ stat
 stat$pval
 
 #pvalue 0
+
+########################################################################
+#### Functional regression                                          ####
+########################################################################
+###########################################################################################
+
+# load data for volatility calculations
+path2 <- "Yfinance_close_prices_volatility.xlsx"
+
+px2 <- read_excel(path2, sheet = "Sheet1") %>%
+  mutate(Date = as.Date(Date)) %>%
+  arrange(Date)
+
+# Commodity names used in scaled_returns
+existing_cols <- intersect(colnames(scaled_returns), colnames(px2))
+
+# Keep only Date + matching commodities
+px2 <- px2 %>%
+  dplyr::select(Date, all_of(existing_cols))
+
+# compute log returns from original prices
+returns_vol <- px2 %>%
+  arrange(Date) %>%
+  mutate(across(-Date,
+                ~ c(NA, diff(log(as.numeric(.))))))
+
+# Remove first NA row
+returns_vol <- returns_vol %>%
+  slice(-1)
+
+# create date vector
+dates_return <- returns_vol$Date
+
+# create return matrix
+returns_mat <- as.matrix(returns_vol[, -1])
+
+# define volatility estimation window
+vol_window_start <- event_date - 365
+vol_window_end   <- event_date - 21
+
+idx_vol <- which(
+  dates_return >= vol_window_start &
+  dates_return <= vol_window_end
+)
+
+cat(sprintf(
+  "Volatility window: %s to %s (%d trading days)\n",
+  vol_window_start,
+  vol_window_end,
+  length(idx_vol)
+))
+
+################################################################################
+# HISTORICAL VOLATILITY
+################################################################################
+
+# Historical annualised volatility
+hist_vol <- apply(
+  returns_mat[idx_vol, , drop = FALSE],
+  2,
+  sd,
+  na.rm = TRUE
+) * sqrt(252)
+
+cat("\nHistorical annualised volatility per commodity:\n")
+print(round(sort(hist_vol, decreasing = TRUE), 4))
+
+# Standardised volatility
+hist_vol_z <- as.numeric(scale(hist_vol))
+names(hist_vol_z) <- names(hist_vol)
+
+################################################################################
+# SCALAR PREDICTOR DATA FRAME
+################################################################################
+
+n_comm <- length(colnames(scaled_returns))
+
+scalar_df <- data.frame(
+  commodity = colnames(scaled_returns),
+  cluster   = factor(
+    hc_clusters,
+    levels = c(1, 2),
+    labels = c("Metals_Agri", "Currencies_Soft")
+  ),
+  vol_z     = hist_vol_z[colnames(scaled_returns)],
+  stringsAsFactors = FALSE
+)
+
+cat("\nScalar predictor data frame:\n")
+print(scalar_df)
+
+################################################################################
+# EVALUATE FUNCTIONAL RESPONSES ON COMMON GRID
+################################################################################
+
+yindex <- seq(min(t_rel), max(t_rel), by = 1)
+
+n_time <- length(yindex)
+
+# Functional data matrix
+Y_mat <- t(eval.fd(yindex, ret_fd))
+
+rownames(Y_mat) <- colnames(scaled_returns)
+
+scalar_df$Y <- Y_mat
+
+################################################################################
+# PENALISED FUNCTION-ON-SCALAR REGRESSION (pffr)
+################################################################################
+
+fosr_fit <- pffr(
+  Y ~ cluster + vol_z,
+  yind = yindex,
+  data = scalar_df
+)
+
+cat("\nModel summary:\n")
+print(summary(fosr_fit))
+
+# Plot coefficient functions
+par(mfrow = c(2, 2), mar = c(4, 4, 3, 1))
+
+plot(
+  fosr_fit,
+  pages = 1,
+  scale = 0,
+  main = "pffr: functional coefficient functions"
+)
+
+par(mfrow = c(1, 1))
+
+################################################################################
+# BAYESIAN FUNCTION-ON-SCALAR REGRESSION
+################################################################################
+
+# Default VB
+cat("Fitting default Bayesian FoSR...\n")
+
+bayes_default <- bayes_fosr(
+  Y ~ cluster + vol_z,
+  data = scalar_df
+)
+
+# Explicit basis dimensions
+cat("Fitting VB model (Kp=4, Kt=10)...\n")
+
+bayes_VB <- bayes_fosr(
+  Y ~ cluster + vol_z,
+  data = scalar_df,
+  Kp = 4,
+  Kt = 10
+)
+
+# OLS approximation
+cat("Fitting OLS approximation...\n")
+
+bayes_OLS <- bayes_fosr(
+  Y ~ cluster + vol_z,
+  data = scalar_df,
+  Kt = 10,
+  est.method = "OLS"
+)
+
+# compare estimated coefficient functions
+models_bayes <- list(
+  default = bayes_default,
+  VB      = bayes_VB,
+  OLS     = bayes_OLS
+)
+
+intercepts_b <- sapply(models_bayes, function(m) m$beta.hat[1, ])
+slopes_clust <- sapply(models_bayes, function(m) m$beta.hat[2, ])
+slopes_vol   <- sapply(models_bayes, function(m) m$beta.hat[3, ])
+
+# helper function to convert the coefficient matrices into a long-format data frame suitable for ggplot2
+make_plot_df <- function(mat, time_grid) {
+
+  df <- as.data.frame(mat)
+
+  df$time <- time_grid
+
+  reshape2::melt(
+    df,
+    id.vars = "time",
+    variable.name = "method",
+    value.name = "beta"
+  )
+}
+
+# internal grid which defines the time points corresponding to the 
+# estimated coefficient functions from the Bayesian FoSR model
+n_kt <- nrow(intercepts_b)
+
+internal_grid <- seq(
+  min(yindex),
+  max(yindex),
+  length.out = n_kt
+)
+
+# plots
+p_intercept <- ggplot(
+  make_plot_df(intercepts_b, internal_grid),
+  aes(x = time, y = beta, color = method)
+) +
+  geom_line(linewidth = 0.9) +
+  geom_hline(yintercept = 0, lty = 2, colour = "grey50") +
+  geom_vline(xintercept = 0, lty = 2, colour = "red") +
+  labs(
+    title = "β₀(t) – Functional Intercept",
+    x = "Days relative to tariff announcement",
+    y = expression(hat(beta)[0](t))
+  ) +
+  theme_bw()
+
+p_cluster <- ggplot(
+  make_plot_df(slopes_clust, internal_grid),
+  aes(x = time, y = beta, color = method)
+) +
+  geom_line(linewidth = 0.9) +
+  geom_hline(yintercept = 0, lty = 2, colour = "grey50") +
+  geom_vline(xintercept = 0, lty = 2, colour = "red") +
+  labs(
+    title = "β₁(t) – Cluster effect",
+    x = "Days relative to tariff announcement",
+    y = expression(hat(beta)[1](t))
+  ) +
+  theme_bw()
+
+p_vol <- ggplot(
+  make_plot_df(slopes_vol, internal_grid),
+  aes(x = time, y = beta, color = method)
+) +
+  geom_line(linewidth = 0.9) +
+  geom_hline(yintercept = 0, lty = 2, colour = "grey50") +
+  geom_vline(xintercept = 0, lty = 2, colour = "red") +
+  labs(
+    title = "β₂(t) – Historical volatility effect",
+    x = "Days relative to tariff announcement",
+    y = expression(hat(beta)[2](t))
+  ) +
+  theme_bw()
+
+gridExtra::grid.arrange(
+  p_intercept,
+  p_cluster,
+  p_vol,
+  ncol = 1
+)
+
+################################################################################
+# SCALAR-ON-FUNCTION REGRESSION
+################################################################################
+
+post_mean_vec <- colMeans(
+  scaled_returns[idx_post, , drop = FALSE]
+)
+
+scalar_df$post_mean <- as.numeric(post_mean_vec)
+
+scalar_df$hist_vol_z <- hist_vol_z[colnames(scaled_returns)]
+
+################################################################################
+# USE ONLY PRE-EVENT FUNCTIONAL INFORMATION
+################################################################################
+
+pre_idx <- which(yindex < 0)
+
+cca_mat_pre <- Y_mat[, pre_idx]
+
+yindex_pre <- yindex[pre_idx]
+
+################################################################################
+# PREDICT POST-EVENT RETURN
+################################################################################
+
+cat("\nResponse: post-event mean return\n")
+
+sofr_post <- pfr(
+  post_mean ~
+    lf(
+      cca_mat_pre,
+      k = min(15, length(yindex_pre) - 1),
+      argvals = yindex_pre
+    ) +
+    cluster +
+    vol_z,
+  data = scalar_df
+)
+
+cat("\nSummary:\n")
+print(summary(sofr_post))
+
+plot(
+  sofr_post,
+  ylab = expression(hat(beta)(t)),
+  xlab = "Days relative to tariff announcement",
+  main = "SoFR: pre-event functional predictor"
+)
+
+abline(v = 0, col = "red", lty = 2)
+
+################################################################################
+# PREDICT HISTORICAL VOLATILITY
+################################################################################
+
+cat("\nResponse: historical volatility (standardised)\n")
+
+sofr_vol <- pfr(
+  hist_vol_z ~
+    lf(
+      cca_mat_pre,
+      k = min(15, length(yindex_pre) - 1),
+      argvals = yindex_pre
+    ) +
+    cluster,
+  data = scalar_df
+)
+
+cat("\nSummary:\n")
+print(summary(sofr_vol))
+
+plot(
+  sofr_vol,
+  ylab = expression(hat(beta)(t)),
+  xlab = "Days relative to tariff announcement",
+  main = "SoFR: predicting historical volatility"
+)
+
+abline(v = 0, col = "red", lty = 2)
+
+################################################################################
+# DIAGNOSTICS
+################################################################################
+
+vol_table <- scalar_df[, c(
+  "commodity",
+  "cluster",
+  "vol_z"
+)]
+
+vol_table$hist_vol_annualised <-
+  round(hist_vol[scalar_df$commodity] * 100, 2)
+
+vol_table <- vol_table[
+  order(
+    vol_table$cluster,
+    -vol_table$hist_vol_annualised
+  ),
+]
+
+cat("\n\n========== VOLATILITY SUMMARY TABLE ==========\n")
+
+print(vol_table)
+
+################################################################################
+# BOXPLOT
+################################################################################
+
+boxplot(
+  hist_vol ~ factor(
+    hc_clusters,
+    labels = c("Metals & Agri", "Currencies & Soft")
+  ),
+  ylab = "Annualised historical volatility",
+  xlab = "",
+  main = "Historical volatility by cluster",
+  col  = c("steelblue", "tomato")
+)
+
+stripchart(
+  hist_vol ~ factor(hc_clusters),
+  method = "jitter",
+  pch = 19,
+  col = "black",
+  add = TRUE,
+  vertical = TRUE
+)
