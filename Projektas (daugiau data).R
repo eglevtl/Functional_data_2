@@ -11,6 +11,10 @@ library(ggplot2)
 library(gridExtra)
 library(reshape2)
 
+#\begin{lstlisting}[caption={R code for functional data preparation}]
+
+#\end{lstlisting}
+
 ###########################################################################################
 #                                     DATASET PREPARATION
 ###########################################################################################
@@ -75,7 +79,7 @@ Lfd_obj <- int2Lfd(2)
 
 # 4) GCV for lambda and basis selection:
 nbasis_grid <- seq(7,20,1)
-lambda_grid <- 10^seq(-2, 10, length.out = 100)
+lambda_grid <- 10^seq(-2, 2, length.out = 100)
 
 gcv_mat <- matrix(NA,length(nbasis_grid),length(lambda_grid))
 
@@ -85,7 +89,7 @@ for(i in seq_along(nbasis_grid)){
   
   for(j in seq_along(lambda_grid)){
     
-    fdPar_obj <- fdPar(basis, int2Lfd(0), lambda_grid[j])
+    fdPar_obj <- fdPar(basis, int2Lfd(2), lambda_grid[j])
     
     sm <- smooth.basis(t_rel, scaled_returns, fdPar_obj)
     
@@ -249,8 +253,8 @@ matplot(tt, lgp, type = "l", lty = 1, col = "grey",
         xlab = "Time",
         ylab = "Standardized log returns")
 
-lines(tt, lgp[,16], col = "red", lwd = 3)    # Corn: MBD outlier
-lines(tt, lgp[,17], col = "blue", lwd = 3)   # Soybeans: functional median
+lines(tt, lgp[,18], col = "red", lwd = 3)    # Corn: MBD outlier
+lines(tt, lgp[,3], col = "blue", lwd = 3)   # Soybeans: functional median
 
 legend("topright",
        legend = c("Corn: MBD outlier", "Soybeans: functional median"),
