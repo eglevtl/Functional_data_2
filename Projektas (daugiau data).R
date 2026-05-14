@@ -476,6 +476,7 @@ source("items/L2stat.R")
 # H1: mu(returns) != 0
 # 
 stat <- L2.stat(x=ret_fd, t.seq = t.seq, mu0=mu0, replication = 500, method = 2)
+stat
 stat$pvalue
 
 ########################################################################
@@ -510,8 +511,12 @@ stat_ztwosample <- Ztwosample(x = ret_fd[cluster1_idx],
 
 stat_ztwosample
 
-crit2 <- stat_ztwosample$params$critical.value
-z2 <- as.numeric(stat_ztwosample$statistics.pointwise[, 1])
+cluster1_idx
+cluster2_idx
+
+ret_fd[cluster1_idx]$fdnames$Commodity
+ret_fd[cluster2_idx]$fdnames$Commodity
+
 
 z2 <- as.numeric(stat_ztwosample$statistics.pointwise[, 1])
 crit2 <- as.numeric(stat_ztwosample$params$critical.value)
@@ -559,7 +564,7 @@ stat_l2twosample <- L2.stat.twosample(x = ret_fd[cluster1_idx],
                           t.seq = t.seq, 
                           method = 1, 
                           replications = 500)
-
+stat_l2twosample
 stat_l2twosample$pvalue
 
 ########################################################################
@@ -574,23 +579,6 @@ stat <- F.stat.twosample(x = ret_fd[cluster1_idx],
                          replications = 500)
 stat
 stat$pvalue
-
-########################################################################
-####??????????????? Two sample permutation test    ????????????????   
-########################################################################
-#HAND MADE CLUSTERS
-stat <- tperm.fd(ret_fd[idx1], ret_fd[idx2])
-stat
-stat$pval
-
-#pvalue 0.22, not rejected, no diff, graph looks weird, at 0 very low observed statistic
-
-#DOING WITH HIERRARCHICAL CLUSTERING CLUSTERS
-stat <- tperm.fd(ret_fd[cluster1_idx], ret_fd[cluster2_idx])
-stat
-stat$pval
-
-#pvalue 0
 
 ########################################################################
 #### Functional regression                                          ####
@@ -968,3 +956,4 @@ stripchart(
   add = TRUE,
   vertical = TRUE
 )
+
