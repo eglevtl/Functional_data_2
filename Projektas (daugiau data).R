@@ -248,19 +248,37 @@ fbplot_obj$outliers
 m <- muod(t(lgp), cut_method = "boxplot")
 m$outliers
 
-#Plot all curves and highlight Corn
+# Plot all smoothed return curves
 matplot(tt, lgp, type = "l", lty = 1, col = "grey",
-        xlab = "Time",
-        ylab = "Standardized log returns")
+        xlab = "Days relative to tariff announcement",
+        ylab = "Standardized log return (smoothed)")
 
-lines(tt, lgp[,18], col = "red", lwd = 3)    # Corn: MBD outlier
-lines(tt, lgp[,3], col = "blue", lwd = 3)   # Soybeans: functional median
+# Highlight functional boxplot outliers
+lines(tt, lgp[, 15], col = "red", lwd = 3)       # Wheat: functional boxplot outlier
+lines(tt, lgp[, 18], col = "orange", lwd = 3)    # Coffee: functional boxplot outlier
+
+# Highlight functional median
+lines(tt, lgp[, 3], col = "blue", lwd = 3)       # Palladium: functional median
+
+# Highlight MUOD magnitude outlier
+lines(tt, lgp[, 4], col = "purple", lwd = 3)     # Platinum: MUOD magnitude outlier
 
 legend("topright",
-       legend = c("Corn: MBD outlier", "Soybeans: functional median"),
-       col = c("red", "blue"),
+       legend = c("Wheat: functional boxplot outlier",
+                  "Coffee: functional boxplot outlier",
+                  "Palladium: functional median",
+                  "Platinum: MUOD magnitude outlier"),
+       col = c("red", "orange", "blue", "purple"),
        lwd = 3,
        cex = 0.8)
+
+data.frame(
+  index = seq_len(ncol(lgp)),
+  commodity = colnames(lgp)
+)
+
+m$outliers$magnitude
+colnames(lgp)[m$outliers$magnitude]
 
 #Functional boxplot visualization using MBD
 fbplot(lgp, method = "MBD",
