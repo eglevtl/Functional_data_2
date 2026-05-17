@@ -711,10 +711,27 @@ scalar_df$Y <- Y_mat
 # PENALISED FUNCTION-ON-SCALAR REGRESSION (pffr)
 ################################################################################
 
+# Pull scalar predictors as plain vectors for pffr
+cluster_dummy <- as.integer(scalar_df$cluster == "Currencies_Soft")
+cluster       <- scalar_df$cluster
+vol_z         <- scalar_df$vol_z
+Y             <- Y_mat
+
+pffr_data <- list(
+  Y             = Y,
+  cluster       = cluster,
+  vol_z         = vol_z,
+  cluster_dummy = cluster_dummy
+)
+
+# Store cluster_dummy in scalar_df for reuse in Bayes / SoFR sections
+scalar_df$cluster_dummy <- cluster_dummy
+
+# Main model
 fosr_fit <- pffr(
   Y ~ cluster + vol_z,
   yind = yindex,
-  data = scalar_df
+  data = pffr_data
 )
 
 cat("\nModel summary:\n")
@@ -734,34 +751,42 @@ par(mfrow = c(1, 1))
 
 ################################################################################
 # BAYESIAN FUNCTION-ON-SCALAR REGRESSION
+# NOTE: 'non-list contrasts argument ignored' is an internal bug in refund's
+# bayes_fosr — suppressWarnings() silences it without affecting results.
 ################################################################################
 
 # Default VB
 cat("Fitting default Bayesian FoSR...\n")
 
-bayes_default <- bayes_fosr(
-  Y ~ cluster + vol_z,
-  data = scalar_df
+bayes_default <- suppressWarnings(
+  bayes_fosr(
+    Y ~ cluster_dummy + vol_z,
+    data = scalar_df
+  )
 )
 
 # Explicit basis dimensions
 cat("Fitting VB model (Kp=4, Kt=10)...\n")
 
-bayes_VB <- bayes_fosr(
-  Y ~ cluster + vol_z,
-  data = scalar_df,
-  Kp = 4,
-  Kt = 10
+bayes_VB <- suppressWarnings(
+  bayes_fosr(
+    Y ~ cluster_dummy + vol_z,
+    data = scalar_df,
+    Kp = 4,
+    Kt = 10
+  )
 )
 
 # OLS approximation
 cat("Fitting OLS approximation...\n")
 
-bayes_OLS <- bayes_fosr(
-  Y ~ cluster + vol_z,
-  data = scalar_df,
-  Kt = 10,
-  est.method = "OLS"
+bayes_OLS <- suppressWarnings(
+  bayes_fosr(
+    Y ~ cluster_dummy + vol_z,
+    data = scalar_df,
+    Kt = 10,
+    est.method = "OLS"
+  )
 )
 
 # compare estimated coefficient functions
@@ -775,7 +800,7 @@ intercepts_b <- sapply(models_bayes, function(m) m$beta.hat[1, ])
 slopes_clust <- sapply(models_bayes, function(m) m$beta.hat[2, ])
 slopes_vol   <- sapply(models_bayes, function(m) m$beta.hat[3, ])
 
-# helper function to convert the coefficient matrices into a long-format data frame suitable for ggplot2
+# helper function to convert the coefficient matrices into a long-format
 make_plot_df <- function(mat, time_grid) {
 
   df <- as.data.frame(mat)
@@ -790,7 +815,7 @@ make_plot_df <- function(mat, time_grid) {
   )
 }
 
-# internal grid which defines the time points corresponding to the 
+# internal grid which defines the time points corresponding to the
 # estimated coefficient functions from the Bayesian FoSR model
 n_kt <- nrow(intercepts_b)
 
@@ -809,7 +834,7 @@ p_intercept <- ggplot(
   geom_hline(yintercept = 0, lty = 2, colour = "grey50") +
   geom_vline(xintercept = 0, lty = 2, colour = "red") +
   labs(
-    title = "β₀(t) – Functional Intercept",
+    title = expression(beta[0](t) ~ "– Functional Intercept"),
     x = "Days relative to tariff announcement",
     y = expression(hat(beta)[0](t))
   ) +
@@ -823,7 +848,7 @@ p_cluster <- ggplot(
   geom_hline(yintercept = 0, lty = 2, colour = "grey50") +
   geom_vline(xintercept = 0, lty = 2, colour = "red") +
   labs(
-    title = "β₁(t) – Cluster effect",
+    title = expression(beta[1](t) ~ "– Cluster effect (Currencies_Soft dummy)"),
     x = "Days relative to tariff announcement",
     y = expression(hat(beta)[1](t))
   ) +
@@ -837,7 +862,7 @@ p_vol <- ggplot(
   geom_hline(yintercept = 0, lty = 2, colour = "grey50") +
   geom_vline(xintercept = 0, lty = 2, colour = "red") +
   labs(
-    title = "β₂(t) – Historical volatility effect",
+    title = expression(beta[2](t) ~ "– Historical volatility effect"),
     x = "Days relative to tariff announcement",
     y = expression(hat(beta)[2](t))
   ) +
@@ -885,7 +910,7 @@ sofr_post <- pfr(
       k = min(15, length(yindex_pre) - 1),
       argvals = yindex_pre
     ) +
-    cluster +
+    cluster_dummy +
     vol_z,
   data = scalar_df
 )
@@ -915,7 +940,7 @@ sofr_vol <- pfr(
       k = min(15, length(yindex_pre) - 1),
       argvals = yindex_pre
     ) +
-    cluster,
+    cluster_dummy,
   data = scalar_df
 )
 
@@ -979,3 +1004,203 @@ stripchart(
   vertical = TRUE
 )
 
+################################################################################
+#                                                                              #
+#   SENSITIVITY ANALYSIS – EXCLUDING NATURAL GAS                               #
+#                                                                              #
+#   Natural Gas sits in the Currencies_Soft cluster with vol_z = 3.26,         #
+#   an extreme outlier identified by MUOD (magnitude outlier).                 #
+#   This script re-runs pffr and SoFR without Natural Gas but keeps the        #
+#   original cluster labels, no re-clustering.                                 #
+#   Cluster 2 retains 5 members. The goal is to check whether Natural Gas      #
+#   drives the main conclusions rather than to rebuild the clustering structure#
+#                                                                              #
+################################################################################
+
+cat("  SENSITIVITY ANALYSIS: EXCLUDING NATURAL GAS\n")
+
+################################################################################
+# 1. SUBSET – drop Natural Gas, keep original cluster labels
+################################################################################
+
+ng_name  <- "Natural_Gas"
+keep_idx <- which(colnames(scaled_returns) != ng_name)
+keep_nms <- colnames(scaled_returns)[keep_idx]
+
+cat(sprintf("Commodities retained: %d  (dropped: %s)\n", length(keep_nms), ng_name))
+cat("Note: original cluster labels are preserved — no re-clustering.\n\n")
+
+# Subset functional object and scaled returns
+ret_fd_sub     <- ret_fd[keep_idx]
+scaled_ret_sub <- scaled_returns[, keep_idx]
+
+# Original cluster assignments minus Natural Gas
+orig_clusters_sub <- hc_clusters[keep_idx]
+
+cat("Cluster membership (original labels, Natural Gas excluded):\n")
+print(split(keep_nms, factor(orig_clusters_sub,
+                              levels = c(1,2),
+                              labels = c("Metals_Agri","Currencies_Soft"))))
+cat("\n")
+
+################################################################################
+# 2. SCALAR PREDICTOR DATA FRAME (sub-sample, original clusters)
+################################################################################
+
+hist_vol_sub   <- hist_vol[keep_nms]
+
+# Rescale vol_z without Natural Gas so it has mean 0 / sd 1 in sub-sample
+hist_vol_z_sub <- as.numeric(scale(hist_vol_sub))
+names(hist_vol_z_sub) <- keep_nms
+
+scalar_df_sub <- data.frame(
+  commodity     = keep_nms,
+  cluster       = factor(orig_clusters_sub,
+                         levels = c(1, 2),
+                         labels = c("Metals_Agri", "Currencies_Soft")),
+  vol_z         = hist_vol_z_sub[keep_nms],
+  stringsAsFactors = FALSE
+)
+
+scalar_df_sub$cluster_dummy <- as.integer(
+  scalar_df_sub$cluster == "Currencies_Soft"
+)
+scalar_df_sub$cluster_x_vol <- scalar_df_sub$cluster_dummy *
+                                scalar_df_sub$vol_z
+
+cat("Scalar predictor data frame (sub-sample):\n")
+print(scalar_df_sub[, c("commodity", "cluster", "vol_z")])
+cat("\n")
+
+################################################################################
+# 3. FUNCTIONAL RESPONSE MATRIX (sub-sample)
+################################################################################
+
+yindex_sub  <- seq(min(t_rel), max(t_rel), by = 1)
+Y_mat_sub   <- t(eval.fd(yindex_sub, ret_fd_sub))
+rownames(Y_mat_sub) <- keep_nms
+scalar_df_sub$Y <- Y_mat_sub
+
+################################################################################
+# 4. pffr – FUNCTION-ON-SCALAR REGRESSION (sub-sample)
+################################################################################
+
+cat("--- pffr (Natural Gas excluded, original clusters) ---\n\n")
+
+pffr_data_sub <- list(
+  Y             = Y_mat_sub,
+  cluster       = scalar_df_sub$cluster,
+  vol_z         = scalar_df_sub$vol_z,
+  cluster_dummy = scalar_df_sub$cluster_dummy
+)
+
+# Main model (no interaction — sensitivity analysis confirmed it is unstable)
+fosr_sub <- pffr(
+  Y ~ cluster + vol_z,
+  yind = yindex_sub,
+  data = pffr_data_sub
+)
+
+cat("Model summary:\n")
+print(summary(fosr_sub))
+
+cat(sprintf(
+  "pffr R²(adj): full = %.4f  |  sub (no NatGas) = %.4f\n\n",
+  summary(fosr_fit)$r.sq,
+  summary(fosr_sub)$r.sq
+))
+
+# Plot
+par(mfrow = c(2, 2), mar = c(4, 4, 3, 1))
+plot(fosr_sub, pages = 1, scale = 0,
+     main = "pffr (Natural Gas excluded, original clusters)")
+par(mfrow = c(1, 1))
+
+################################################################################
+# 5. SoFR – PREDICT POST-EVENT RETURN (sub-sample)
+################################################################################
+
+cat("--- SoFR: predicting post-event return (Natural Gas excluded) ---\n\n")
+
+idx_post_sub    <- which(t_rel %in% 1:20)
+post_mean_sub   <- colMeans(scaled_ret_sub[idx_post_sub, , drop = FALSE])
+scalar_df_sub$post_mean  <- as.numeric(post_mean_sub)
+scalar_df_sub$hist_vol_z <- hist_vol_z_sub[keep_nms]
+
+pre_idx_sub     <- which(yindex_sub < 0)
+cca_mat_pre_sub <- Y_mat_sub[, pre_idx_sub]
+yindex_pre_sub  <- yindex_sub[pre_idx_sub]
+
+# Simplified model: drop cluster_x_vol
+sofr_post_sub <- pfr(
+  post_mean ~
+    lf(cca_mat_pre_sub,
+       k       = min(15, length(yindex_pre_sub) - 1),
+       argvals = yindex_pre_sub) +
+    cluster_dummy +
+    vol_z,
+  data = scalar_df_sub
+)
+
+cat("SoFR summary (post-event return, Natural Gas excluded):\n")
+print(summary(sofr_post_sub))
+
+plot(sofr_post_sub,
+     ylab = expression(hat(beta)(t)),
+     xlab = "Days relative to tariff announcement",
+     main = "SoFR – pre-event predictor (Natural Gas excluded)")
+abline(v = 0, col = "red", lty = 2)
+
+################################################################################
+# 6. COEFFICIENT COMPARISON: full vs sub-sample SoFR
+################################################################################
+
+cat("\n--- Parametric coefficient comparison: full vs sub-sample ---\n\n")
+
+param_full <- as.data.frame(summary(sofr_post)$p.table)
+param_sub  <- as.data.frame(summary(sofr_post_sub)$p.table)
+
+# Common terms between the two models
+common_terms <- intersect(rownames(param_full), rownames(param_sub))
+
+comparison <- data.frame(
+  Term      = common_terms,
+  Est_full  = round(param_full[common_terms, "Estimate"],  4),
+  pval_full = round(param_full[common_terms, "Pr(>|t|)"],  4),
+  Est_sub   = round(param_sub[common_terms,  "Estimate"],  4),
+  pval_sub  = round(param_sub[common_terms,  "Pr(>|t|)"],  4),
+  row.names = NULL
+)
+
+print(comparison)
+
+# Flag whether sign and significance are preserved
+cat("\nRobustness check (same sign AND p < 0.05 in both?):\n")
+for (i in seq_len(nrow(comparison))) {
+  sig_full  <- comparison$pval_full[i] < 0.05
+  sig_sub   <- comparison$pval_sub[i]  < 0.05
+  same_sign <- sign(comparison$Est_full[i]) == sign(comparison$Est_sub[i])
+  robust    <- sig_full & sig_sub & same_sign
+  cat(sprintf("  %-30s: %s\n",
+              comparison$Term[i],
+              ifelse(robust,
+                     "ROBUST",
+                     ifelse(same_sign,
+                            "same sign, significance changed",
+                            "CHANGED"))))
+}
+
+################################################################################
+# 7. SUMMARY
+################################################################################
+
+cat("  SENSITIVITY SUMMARY\n")
+
+cat(sprintf("pffr  R²: full = %.3f  |  sub (no NatGas) = %.3f\n",
+            summary(fosr_fit)$r.sq, summary(fosr_sub)$r.sq))
+cat(sprintf("SoFR  R²: full = %.3f  |  sub (no NatGas) = %.3f\n",
+            summary(sofr_post)$r.sq, summary(sofr_post_sub)$r.sq))
+cat("Clustering: original labels retained — no reassignment.\n")
+cat(sprintf("Cluster sizes: Metals_Agri = %d, Currencies_Soft = %d\n",
+            sum(orig_clusters_sub == 1),
+            sum(orig_clusters_sub == 2)))
