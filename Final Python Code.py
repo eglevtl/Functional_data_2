@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib.gridspec as gridspec
 from matplotlib import cm
 from scipy.interpolate import BSpline, make_lsq_spline
 from scipy.linalg import lstsq
@@ -47,7 +48,7 @@ from skfda.preprocessing.registration import FisherRaoElasticRegistration
 # ============================================================
 # 1. LOAD DATA
 # ============================================================
-path = r"C:\Users\liepa\Documents\VU\Mokslai 2025_2027\Functional data analysis\Projektas (geras)\Python\Yfinance_close_prices_V2.xlsx"
+path = r"Yfinance_close_prices_V2.xlsx"
 px   = pd.read_excel(path, sheet_name="Close_prices")
 px["Date"] = pd.to_datetime(px["Date"])
 px   = px.sort_values("Date").reset_index(drop=True)
@@ -1148,3 +1149,706 @@ summary = pd.DataFrame({
 })
 print("\n========== TEST SUMMARY ==========")
 print(summary.to_string(index=False))
+
+# ============================================================
+# 17. VOLATILITY DATA LOADING
+# ============================================================
+
+path2 = r"Yfinance_close_prices_volatility.xlsx"
+px2   = pd.read_excel(path2, sheet_name="Sheet1")
+px2["Date"] = pd.to_datetime(px2["Date"])
+px2   = px2.sort_values("Date").reset_index(drop=True)
+
+existing_cols = [c for c in commodities if c in px2.columns]
+px2 = px2[["Date"] + existing_cols]
+
+# Log returns iš volatility failo
+returns_vol = px2.copy()
+for col in existing_cols:
+    returns_vol[col] = np.log(px2[col].astype(float)).diff()
+
+returns_vol      = returns_vol.dropna().reset_index(drop=True)
+dates_return_vol = returns_vol["Date"]
+returns_mat      = returns_vol[existing_cols].values.astype(float)
+
+# ============================================================
+# 18.HISTORICAL VOLATILITY
+# ============================================================
+
+vol_window_start = event_date - pd.Timedelta(days=365)
+vol_window_end   = event_date - pd.Timedelta(days=21)
+
+idx_vol = np.where(
+    (dates_return_vol >= vol_window_start) &
+    (dates_return_vol <= vol_window_end)
+)[0]
+
+print(f"Volatility window: {vol_window_start.date()} to {vol_window_end.date()} "
+      f"({len(idx_vol)} trading days)")
+
+hist_vol = returns_mat[idx_vol, :].std(axis=0, ddof=1) * np.sqrt(252)
+hist_vol = pd.Series(hist_vol, index=existing_cols)
+
+print("\nHistorical annualised volatility per commodity:")
+print(hist_vol.sort_values(ascending=False).round(4).to_string())
+
+hist_vol_z            = (hist_vol - hist_vol.mean()) / hist_vol.std(ddof=1)
+hist_vol_z.index      = existing_cols
+
+_R_metals_agri = {
+    "Gold", "Silver", "Palladium", "Platinum",
+    "Copper", "Aluminum", "Gasoline", "Crude_Oil",
+    "Wheat", "Corn", "Soybeans", "Coffee", "Sugar", "Cotton"
+}
+
+# Kuris Python klasterio numeris dominuoja tarp R Metals_Agri prekių?
+_anchor_mask   = np.array([c in _R_metals_agri for c in commodities])
+_anchor_labels = hc_labels[_anchor_mask]
+_dominant      = int(np.bincount(_anchor_labels - 1).argmax()) + 1  # 1 arba 2
+
+if _dominant == 1:
+    # Python cluster 1 = R Metals_Agri  → viskas gerai
+    _aligned_labels = hc_labels.copy()
+    print("[Cluster align] Python cluster 1 = R Metals_Agri — jokių pakeitimų.")
+else:
+    # Python cluster 1 = R Currencies_Soft → apverčiame
+    _aligned_labels = np.where(hc_labels == 1, 2, 1)
+    print("[Cluster align] Clusters aligned.")
+
+_check = pd.DataFrame({"commodity": commodities, "cluster_py_aligned": _aligned_labels})
+print("\nClusters:")
+for lbl, name in {1: "Metals_Agri", 2: "Currencies_Soft"}.items():
+    members = [commodities[i] for i, c in enumerate(_aligned_labels) if c == lbl]
+    print(f"  {name} ({len(members)}): {members}")
+
+# ============================================================
+# 19. SCALAR PREDICTOR DATA FRAME
+# ============================================================
+
+scalar_df = pd.DataFrame({
+    "commodity"     : commodities,
+    "cluster"       : pd.Categorical(
+                        ["Metals_Agri" if _aligned_labels[i] == 1
+                         else "Currencies_Soft"
+                         for i in range(len(commodities))],
+                        categories=["Metals_Agri", "Currencies_Soft"]
+                      ),
+    "vol_z"         : hist_vol_z[commodities].values,
+    "cluster_dummy" : (_aligned_labels == 2).astype(int),  # Currencies_Soft = 1
+})
+
+print("\nScalar predictor data frame:")
+print(scalar_df.to_string(index=False))
+
+# ============================================================
+# 20. EVALUATE FUNCTIONAL RESPONSES ON COMMON GRID
+# ============================================================
+
+yindex = plot_days.copy()  
+n_time = len(yindex)
+
+Y_mat = lgp.T.copy()          
+
+scalar_df["Y"] = list(Y_mat)    
+
+def _make_bspline_basis(t_grid, n_basis, order=4):
+    """B-spline bazės matrica (n_time × n_basis)."""
+    t_min, t_max = t_grid.min(), t_grid.max()
+    n_interior   = n_basis - order
+    interior     = np.linspace(t_min, t_max, n_interior + 2)[1:-1]
+    knots        = np.concatenate([
+        np.repeat(t_min, order),
+        interior,
+        np.repeat(t_max, order)
+    ])
+    B = np.zeros((len(t_grid), n_basis))
+    for i in range(n_basis):
+        c = np.zeros(n_basis)
+        c[i] = 1.0
+        B[:, i] = BSpline(knots, c, order - 1)(t_grid)
+    return B, knots
+
+
+def _diff_penalty(n_basis, diff_order=2):
+    """Antrosios eilės skirtumų penalizacijos matrica."""
+    D = np.diff(np.eye(n_basis), n=diff_order, axis=0)
+    return D.T @ D
+
+
+def _r2(y, y_hat, n, p):
+    ss_res = np.sum((y - y_hat) ** 2)
+    ss_tot = np.sum((y - y.mean()) ** 2)
+    r2     = 1 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+    r2_adj = 1 - (1 - r2) * (n - 1) / max(n - p - 1, 1)
+    return r2, r2_adj
+
+
+# ============================================================
+# 21. PENALISED FUNCTION-ON-SCALAR REGRESSION  (pffr)
+# ============================================================
+
+def pffr_pointwise(Y_mat, scalar_df, yindex, n_basis_smooth=15, lam=1e-3):
+
+    n_comm, n_time = Y_mat.shape
+    n_pred         = 3   # intercept + cluster + vol_z
+
+    X = np.column_stack([
+        np.ones(n_comm),
+        scalar_df["cluster_dummy"].values,
+        scalar_df["vol_z"].values
+    ])
+
+    beta_raw  = np.zeros((n_pred, n_time))
+    se_hat    = np.zeros((n_pred, n_time))
+    r2_vec    = np.zeros(n_time)
+
+    XtX_inv = np.linalg.pinv(X.T @ X)
+
+    for t_idx in range(n_time):
+        y_t            = Y_mat[:, t_idx]
+        b              = XtX_inv @ X.T @ y_t
+        beta_raw[:, t_idx] = b
+
+        y_hat  = X @ b
+        resid  = y_t - y_hat
+        s2     = np.sum(resid ** 2) / max(n_comm - n_pred, 1)
+        se_hat[:, t_idx] = np.sqrt(np.diag(XtX_inv) * s2)
+
+        ss_tot = np.sum((y_t - y_t.mean()) ** 2)
+        ss_res = np.sum(resid ** 2)
+        r2_vec[t_idx] = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    Phi, _  = _make_bspline_basis(yindex, n_basis_smooth, order=4)
+    P       = _diff_penalty(n_basis_smooth, diff_order=2)
+    A       = Phi.T @ Phi + lam * P
+
+    beta_hat = np.zeros_like(beta_raw)
+    for k in range(n_pred):
+        c              = np.linalg.solve(A, Phi.T @ beta_raw[k])
+        beta_hat[k]    = Phi @ c
+
+    mean_r2_adj = float(np.mean(
+        1 - (1 - r2_vec) * (n_comm - 1) / max(n_comm - n_pred - 1, 1)
+    ))
+
+    return beta_hat, se_hat, r2_vec, mean_r2_adj
+
+
+beta_hat, se_hat, r2_vec, fosr_r2_adj = pffr_pointwise(
+    Y_mat, scalar_df, yindex, n_basis_smooth=15, lam=1e-3
+)
+
+print(f"\npffr atitikmuo — mean R²(adj): {fosr_r2_adj:.4f}")
+
+labels_beta = [
+    r"$\hat{\beta}_0(t)$ – Functional Intercept",
+    r"$\hat{\beta}_1(t)$ – Cluster effect (Currencies_Soft)",
+    r"$\hat{\beta}_2(t)$ – Historical volatility effect",
+]
+colors_beta = ["black", "steelblue", "darkorange"]
+
+fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+
+for k, ax in enumerate(axes):
+    b  = beta_hat[k]
+    se = se_hat[k]
+    ax.plot(yindex, b, color=colors_beta[k], lw=2, label=labels_beta[k])
+    ax.fill_between(yindex, b - 1.96 * se, b + 1.96 * se,
+                    alpha=0.2, color=colors_beta[k], label="95% CI")
+    ax.axhline(0, color="grey", lw=0.8, ls="--")
+    ax.axvline(0, color="red",  lw=1.2, ls="--", label="t=0 (tariff)")
+    ax.set_ylabel(f"beta_{k}(t)")
+    ax.set_title(labels_beta[k])
+    ax.legend(fontsize=8, frameon=False)
+
+axes[-1].set_xlabel("Days relative to tariff announcement")
+plt.suptitle("pffr: Functional coefficient functions", fontsize=13, fontweight="bold")
+plt.tight_layout()
+plt.savefig("plot_pffr_coefficients.png", dpi=150)
+plt.show()
+print("Saved plot_pffr_coefficients.png")
+
+
+# ============================================================
+# 22. BAYESIAN FUNCTION-ON-SCALAR REGRESSION
+# ============================================================
+
+def bayes_fosr_approx(Y_mat, scalar_df, yindex,
+                      alpha_ridge=0.0, n_basis_smooth=10, lam=1e-3):
+   
+    n_comm, n_time = Y_mat.shape
+    n_pred         = 3
+
+    X = np.column_stack([
+        np.ones(n_comm),
+        scalar_df["cluster_dummy"].values,
+        scalar_df["vol_z"].values
+    ])
+
+    XtX     = X.T @ X + alpha_ridge * np.eye(n_pred)
+    XtX_inv = np.linalg.inv(XtX)
+
+    beta_raw = np.zeros((n_pred, n_time))
+    for t_idx in range(n_time):
+        beta_raw[:, t_idx] = XtX_inv @ X.T @ Y_mat[:, t_idx]
+
+    Phi, _ = _make_bspline_basis(yindex, n_basis_smooth, order=4)
+    P      = _diff_penalty(n_basis_smooth, diff_order=2)
+    A      = Phi.T @ Phi + lam * P
+
+    beta_hat = np.zeros_like(beta_raw)
+    for k in range(n_pred):
+        c           = np.linalg.solve(A, Phi.T @ beta_raw[k])
+        beta_hat[k] = Phi @ c
+
+    return beta_hat
+
+
+bayes_default = bayes_fosr_approx(Y_mat, scalar_df, yindex,
+                                   alpha_ridge=0.01, n_basis_smooth=15)
+bayes_VB      = bayes_fosr_approx(Y_mat, scalar_df, yindex,
+                                   alpha_ridge=0.1,  n_basis_smooth=10)
+bayes_OLS     = bayes_fosr_approx(Y_mat, scalar_df, yindex,
+                                   alpha_ridge=0.0,  n_basis_smooth=10)
+
+models_bayes = {
+    "default" : bayes_default,
+    "VB"      : bayes_VB,
+    "OLS"     : bayes_OLS,
+}
+
+coef_names  = [
+    r"$\beta_0(t)$ – Functional Intercept",
+    r"$\beta_1(t)$ – Cluster effect (Currencies_Soft dummy)",
+    r"$\beta_2(t)$ – Historical volatility effect",
+]
+method_cols = {"default": "black", "VB": "steelblue", "OLS": "darkorange"}
+
+fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+
+for k, ax in enumerate(axes):
+    for method, beta in models_bayes.items():
+        ax.plot(yindex, beta[k], lw=1.8,
+                color=method_cols[method], label=method)
+    ax.axhline(0, color="grey", lw=0.8, ls="--")
+    ax.axvline(0, color="red",  lw=1.2, ls="--")
+    ax.set_title(coef_names[k])
+    ax.set_ylabel("beta(t)")
+    ax.legend(fontsize=8, frameon=False)
+
+axes[-1].set_xlabel("Days relative to tariff announcement")
+plt.suptitle("Bayesian FoSR: coefficient comparison across methods",
+             fontsize=13, fontweight="bold")
+plt.tight_layout()
+plt.savefig("plot_bayes_fosr_comparison.png", dpi=150)
+plt.show()
+print("Saved plot_bayes_fosr_comparison.png")
+
+
+# ============================================================
+# 23. SCALAR-ON-FUNCTION REGRESSION  (pfr)
+# ============================================================
+
+idx_post_sofr    = np.isin(t_rel, np.arange(1, 21))
+post_mean_vec    = scaled_returns[idx_post_sofr, :].mean(axis=0)
+scalar_df        = scalar_df.copy()
+scalar_df["post_mean"]     = post_mean_vec
+scalar_df["hist_vol_z"]    = hist_vol_z[commodities].values
+
+# (atitinka R: pre_idx <- which(yindex < 0); cca_mat_pre <- Y_mat[, pre_idx])
+pre_idx     = np.where(yindex < 0)[0]
+cca_mat_pre = Y_mat[:, pre_idx]       # (n_comm, n_pre)
+yindex_pre  = yindex[pre_idx]
+
+
+def pfr_sofr(cca_mat_pre, scalar_df, response_col,
+             extra_scalar_cols=None,
+             yindex_pre=None,
+             k=15,
+             lam=None):
+ 
+    n_comm, n_pre = cca_mat_pre.shape
+
+    if yindex_pre is None:
+        yindex_pre = np.linspace(0, 1, n_pre)
+
+    y = scalar_df[response_col].values.astype(float)
+
+    Phi, _  = _make_bspline_basis(yindex_pre, k, order=4)
+    P       = _diff_penalty(k, diff_order=2)
+
+    
+    dt     = np.gradient(yindex_pre)
+    W_Phi  = Phi * dt[:, None]        # (n_pre, k)
+    V      = cca_mat_pre @ W_Phi      # (n_comm, k)
+
+
+    ones = np.ones((n_comm, 1))
+    if extra_scalar_cols:
+        Z_sc     = scalar_df[extra_scalar_cols].values.astype(float)
+        X_design = np.hstack([ones, V, Z_sc])
+        n_scalar = Z_sc.shape[1]
+    else:
+        X_design = np.hstack([ones, V])
+        n_scalar = 0
+
+    n_total = X_design.shape[1]
+
+
+    P_full = np.zeros((n_total, n_total))
+    P_full[1:1 + k, 1:1 + k] = P   # λ pridedama žemiau
+
+    if lam is None:
+        lam_grid   = np.logspace(-4, 4, 100)
+        gcv_scores = np.zeros(len(lam_grid))
+
+        for j, lam_try in enumerate(lam_grid):
+            A_try   = X_design.T @ X_design + lam_try * P_full
+            try:
+                coef_try = np.linalg.solve(A_try, X_design.T @ y)
+            except np.linalg.LinAlgError:
+                gcv_scores[j] = np.inf
+                continue
+            y_hat_try = X_design @ coef_try
+            resid_try = y - y_hat_try
+            # Hat matrica pėdsakas (efektyvūs laisvės laipsniai)
+            try:
+                H_try = X_design @ np.linalg.solve(A_try, X_design.T)
+                edf_try = np.trace(H_try)
+            except np.linalg.LinAlgError:
+                gcv_scores[j] = np.inf
+                continue
+            denom = (1 - edf_try / n_comm) ** 2
+            gcv_scores[j] = (np.sum(resid_try ** 2) / n_comm) / (
+                denom if denom > 1e-10 else np.inf
+            )
+
+        best_lam = lam_grid[np.argmin(gcv_scores)]
+    else:
+        best_lam = lam
+
+
+    A     = X_design.T @ X_design + best_lam * P_full
+    coef  = np.linalg.solve(A, X_design.T @ y)
+    y_hat = X_design @ coef
+
+    # --- Efektyvūs laisvės laipsniai: edf = trace(H) ---
+    # (atitinka R mgcv edf; skaičiuojama kaip trace(X (X'X+λP)^{-1} X'))
+    H        = X_design @ np.linalg.solve(A, X_design.T)
+    edf      = float(np.trace(H))                 
+    df_resid = max(n_comm - edf, 1e-6)            
+
+
+    ss_res = np.sum((y - y_hat) ** 2)
+    ss_tot = np.sum((y - y.mean()) ** 2)
+    r2     = 1 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+    r2_adj = 1 - (1 - r2) * (n_comm - 1) / df_resid
+
+    s2    = ss_res / df_resid
+    A_inv = np.linalg.pinv(A)
+  
+    se_all = np.sqrt(np.diag(A_inv) * s2)
+
+    intercept = coef[0]
+    c_beta    = coef[1:1 + k]
+    beta_func = Phi @ c_beta           # β(t) = Φ(t) c
+
+    if n_scalar > 0:
+        c_scalar     = coef[1 + k:]
+        scalar_coefs = pd.Series(c_scalar, index=extra_scalar_cols)
+    else:
+        scalar_coefs = pd.Series(dtype=float)
+
+
+    param_names = ["(Intercept)"] + \
+                  (extra_scalar_cols if extra_scalar_cols else [])
+    param_idx   = [0] + list(range(1 + k, n_total))
+    param_coefs = coef[param_idx]
+    param_se    = se_all[param_idx]
+    t_vals      = param_coefs / (param_se + 1e-12)
+    p_vals      = 2 * (1 - t.cdf(np.abs(t_vals), df=df_resid))
+
+    p_table = pd.DataFrame({
+        "Estimate"  : param_coefs.round(6),
+        "Std. Error": param_se.round(6),
+        "t value"   : t_vals.round(4),
+        "Pr(>|t|)"  : p_vals.round(4),
+    }, index=param_names)
+
+    return {
+        "model_coef"  : coef,
+        "r2"          : r2,
+        "r2_adj"      : r2_adj,
+        "edf"         : edf,
+        "df_resid"    : df_resid,
+        "scale"       : s2,
+        "lam"         : best_lam,
+        "beta_func"   : beta_func,
+        "scalar_coefs": scalar_coefs,
+        "p_table"     : p_table,
+        "y_hat"       : y_hat,
+        "intercept"   : intercept,
+        "Phi"         : Phi,
+        "c_beta"      : c_beta,
+    }
+
+
+# ============================================================
+# 24.  POST-EVENT RETURN
+# ============================================================
+
+print("\nResponse: post-event mean return")
+
+sofr_post = pfr_sofr(
+    cca_mat_pre,
+    scalar_df,
+    response_col       = "post_mean",
+    extra_scalar_cols  = ["cluster_dummy", "vol_z"],
+    yindex_pre         = yindex_pre,
+    k                  = min(15, len(yindex_pre) - 1),
+    lam                = None,   
+)
+
+print(f"\nSummary:")
+print(f"  R²(adj)    = {sofr_post['r2_adj']:.4f}   "
+      f"Deviance explained = {sofr_post['r2']*100:.1f}%")
+print(f"  edf        = {sofr_post['edf']:.3f}   "
+      f"Scale est. = {sofr_post['scale']:.6f}   n = {len(scalar_df)}")
+print(f"  lambda(GCV)= {sofr_post['lam']:.2e}")
+print("\nParametric coefficients:")
+print(sofr_post["p_table"].to_string())
+
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.plot(yindex_pre, sofr_post["beta_func"], color="black", lw=2,
+        label=r"$\hat{\beta}(t)$")
+ax.axhline(0, color="grey", lw=0.8, ls="--")
+ax.axvline(0, color="red",  lw=1.2, ls="--", label="t=0 (tariff)")
+ax.set_xlabel("Days relative to tariff announcement")
+ax.set_ylabel(r"$\hat{\beta}(t)$")
+ax.set_title("SoFR: pre-event functional predictor")
+ax.legend(fontsize=9, frameon=False)
+plt.tight_layout()
+plt.savefig("plot_sofr_post.png", dpi=150)
+plt.show()
+print("Saved plot_sofr_post.png")
+
+
+# ============================================================
+# 25. PREDICT HISTORICAL VOLATILITY
+# ============================================================
+
+print("\nResponse: historical volatility (standardised)")
+
+sofr_vol = pfr_sofr(
+    cca_mat_pre,
+    scalar_df,
+    response_col       = "hist_vol_z",
+    extra_scalar_cols  = ["cluster_dummy"],
+    yindex_pre         = yindex_pre,
+    k                  = min(15, len(yindex_pre) - 1),
+    lam                = None,   
+)
+
+print(f"\nSummary:")
+print(f"  R²(adj)    = {sofr_vol['r2_adj']:.4f}   "
+      f"Deviance explained = {sofr_vol['r2']*100:.1f}%")
+print(f"  edf        = {sofr_vol['edf']:.3f}   "
+      f"Scale est. = {sofr_vol['scale']:.6f}   n = {len(scalar_df)}")
+print(f"  lambda(GCV)= {sofr_vol['lam']:.2e}")
+print("\nParametric coefficients:")
+print(sofr_vol["p_table"].to_string())
+
+# Grafikas  (atitinka R: plot(sofr_vol, ...))
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.plot(yindex_pre, sofr_vol["beta_func"], color="black", lw=2,
+        label=r"$\hat{\beta}(t)$")
+ax.axhline(0, color="grey", lw=0.8, ls="--")
+ax.axvline(0, color="red",  lw=1.2, ls="--", label="t=0 (tariff)")
+ax.set_xlabel("Days relative to tariff announcement")
+ax.set_ylabel(r"$\hat{\beta}(t)$")
+ax.set_title("SoFR: predicting historical volatility")
+ax.legend(fontsize=9, frameon=False)
+plt.tight_layout()
+plt.savefig("plot_sofr_vol.png", dpi=150)
+plt.show()
+print("Saved plot_sofr_vol.png")
+
+vol_table = scalar_df[["commodity", "cluster", "vol_z"]].copy()
+vol_table["hist_vol_annualised"] = (hist_vol[commodities].values * 100).round(2)
+vol_table = vol_table.sort_values(
+    ["cluster", "hist_vol_annualised"], ascending=[True, False]
+).reset_index(drop=True)
+
+print("\n\n========== VOLATILITY SUMMARY TABLE ==========")
+print(vol_table.to_string(index=False))
+
+# BOXPLOT  (atitinka R: boxplot(hist_vol ~ factor(hc_clusters, ...)))
+cluster_map   = {1: "Metals & Agri", 2: "Currencies & Soft"}
+data_by_clust = [
+    hist_vol[commodities][np.array(_aligned_labels) == k].values
+    for k in [1, 2]
+]
+
+fig, ax = plt.subplots(figsize=(8, 5))
+bp = ax.boxplot(data_by_clust, patch_artist=True,
+                labels=list(cluster_map.values()))
+bp["boxes"][0].set_facecolor("steelblue")
+bp["boxes"][1].set_facecolor("tomato")
+
+for k_idx, k in enumerate([1, 2]):
+    mask  = np.array(_aligned_labels) == k
+    xvals = np.random.normal(k_idx + 1, 0.04, size=mask.sum())
+    ax.scatter(xvals, hist_vol[commodities][mask].values,
+               color="black", s=30, zorder=5, alpha=0.7)
+
+ax.set_ylabel("Annualised historical volatility")
+ax.set_title("Historical volatility by cluster")
+plt.tight_layout()
+plt.savefig("plot_vol_boxplot.png", dpi=150)
+plt.show()
+print("Saved plot_vol_boxplot.png")
+
+
+# ============================================================
+# 26. SENSITIVITY ANALYSIS – EXCLUDING NATURAL GAS
+# ============================================================
+
+print("\n" + "=" * 60)
+print("  SENSITIVITY ANALYSIS: EXCLUDING NATURAL GAS")
+print("=" * 60)
+
+ng_name  = "Natural_Gas"
+keep_idx = [i for i, c in enumerate(commodities) if c != ng_name]
+keep_nms = [commodities[i] for i in keep_idx]
+
+print(f"Commodities retained: {len(keep_nms)}  (dropped: {ng_name})")
+print("Note: original cluster labels preserved — no re-clustering.\n")
+
+orig_clusters_sub = _aligned_labels[keep_idx]
+
+print("Cluster membership (original labels, Natural Gas excluded):")
+for lbl, name in {1: "Metals_Agri", 2: "Currencies_Soft"}.items():
+    members = [keep_nms[i] for i, c in enumerate(orig_clusters_sub) if c == lbl]
+    print(f"  {name}: {members}")
+print()
+
+
+hist_vol_sub   = hist_vol[keep_nms]
+hist_vol_z_sub = (hist_vol_sub - hist_vol_sub.mean()) / hist_vol_sub.std(ddof=1)
+
+scaled_ret_sub  = scaled_returns[:, keep_idx]
+idx_post_sub    = np.isin(t_rel, np.arange(1, 21))
+post_mean_sub   = scaled_ret_sub[idx_post_sub, :].mean(axis=0)
+
+scalar_df_sub = pd.DataFrame({
+    "commodity"     : keep_nms,
+    "cluster"       : pd.Categorical(
+                        ["Metals_Agri" if c == 1 else "Currencies_Soft"
+                         for c in orig_clusters_sub],
+                        categories=["Metals_Agri", "Currencies_Soft"]
+                      ),
+    "vol_z"         : hist_vol_z_sub[keep_nms].values,
+    "cluster_dummy" : (orig_clusters_sub == 2).astype(int),
+    "post_mean"     : post_mean_sub,
+    "hist_vol_z"    : hist_vol_z_sub[keep_nms].values,
+})
+
+print("Scalar predictor data frame (sub-sample):")
+print(scalar_df_sub[["commodity", "cluster", "vol_z"]].to_string(index=False))
+print()
+
+
+Y_mat_sub   = Y_mat[keep_idx, :]
+scalar_df_sub["Y"] = list(Y_mat_sub)
+
+
+print("--- pffr (Natural Gas excluded, original clusters) ---\n")
+
+beta_sub, se_sub, r2_sub_vec, fosr_sub_r2_adj = pffr_pointwise(
+    Y_mat_sub, scalar_df_sub, yindex, n_basis_smooth=15, lam=1e-3
+)
+
+print(f"pffr R²(adj): full = {fosr_r2_adj:.4f}  |  sub (no NatGas) = {fosr_sub_r2_adj:.4f}\n")
+
+print("--- SoFR: predicting post-event return (Natural Gas excluded) ---\n")
+
+pre_idx_sub     = np.where(yindex < 0)[0]
+cca_mat_pre_sub = Y_mat_sub[:, pre_idx_sub]
+yindex_pre_sub  = yindex[pre_idx_sub]
+
+sofr_post_sub = pfr_sofr(
+    cca_mat_pre_sub,
+    scalar_df_sub,
+    response_col       = "post_mean",
+    extra_scalar_cols  = ["cluster_dummy", "vol_z"],
+    yindex_pre         = yindex_pre_sub,
+    k                  = min(15, len(yindex_pre_sub) - 1),
+    lam                = None,   # GCV paieška
+)
+
+print("SoFR summary (post-event return, Natural Gas excluded):")
+print(f"  R²(adj)    = {sofr_post_sub['r2_adj']:.4f}   "
+      f"Deviance explained = {sofr_post_sub['r2']*100:.1f}%")
+print(f"  edf        = {sofr_post_sub['edf']:.3f}   "
+      f"Scale est. = {sofr_post_sub['scale']:.6f}   n = {len(scalar_df_sub)}")
+print(f"  lambda(GCV)= {sofr_post_sub['lam']:.2e}")
+print("\nParametric coefficients:")
+print(sofr_post_sub["p_table"].to_string())
+
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.plot(yindex_pre_sub, sofr_post_sub["beta_func"],
+        color="black", lw=2, label=r"$\hat{\beta}(t)$")
+ax.axhline(0, color="grey", lw=0.8, ls="--")
+ax.axvline(0, color="red",  lw=1.2, ls="--", label="t=0 (tariff)")
+ax.set_xlabel("Days relative to tariff announcement")
+ax.set_ylabel(r"$\hat{\beta}(t)$")
+ax.set_title("SoFR – pre-event predictor (Natural Gas excluded)")
+ax.legend(fontsize=9, frameon=False)
+plt.tight_layout()
+plt.savefig("plot_sofr_post_sub.png", dpi=150)
+plt.show()
+
+# -------------------------------------------------------
+# 27. COEFFICIENT COMPARISON: full vs sub-sample
+# -------------------------------------------------------
+print("\n--- Parametric coefficient comparison: full vs sub-sample ---\n")
+
+param_full = sofr_post["p_table"]
+param_sub  = sofr_post_sub["p_table"]
+
+common_terms = param_full.index.intersection(param_sub.index)
+
+comparison = pd.DataFrame({
+    "Term"     : common_terms,
+    "Est_full" : param_full.loc[common_terms, "Estimate"].values.round(4),
+    "pval_full": param_full.loc[common_terms, "Pr(>|t|)"].values.round(4),
+    "Est_sub"  : param_sub.loc[common_terms,  "Estimate"].values.round(4),
+    "pval_sub" : param_sub.loc[common_terms,  "Pr(>|t|)"].values.round(4),
+})
+
+print(comparison.to_string(index=False))
+
+print("\nRobustness check (same sign AND p < 0.05 in both?):")
+for _, row in comparison.iterrows():
+    sig_full  = row["pval_full"] < 0.05
+    sig_sub   = row["pval_sub"]  < 0.05
+    same_sign = np.sign(row["Est_full"]) == np.sign(row["Est_sub"])
+    robust    = sig_full and sig_sub and same_sign
+    if robust:
+        status = "ROBUST"
+    elif same_sign:
+        status = "same sign, significance changed"
+    else:
+        status = "CHANGED"
+    print(f"  {row['Term']:<30}: {status}")
+
+print("\n" + "=" * 60)
+print("  SENSITIVITY SUMMARY")
+print("=" * 60)
+
+print(f"pffr  R²(adj): full = {fosr_r2_adj:.3f}  |  sub (no NatGas) = {fosr_sub_r2_adj:.3f}")
+print(f"SoFR  R²(adj): full = {sofr_post['r2_adj']:.3f}  |  sub (no NatGas) = {sofr_post_sub['r2_adj']:.3f}")
+print(f"SoFR  R²:      full = {sofr_post['r2']:.3f}  |  sub (no NatGas) = {sofr_post_sub['r2']:.3f}")
+print("Clustering: original labels retained — no reassignment.")
+print(f"Cluster sizes: Metals_Agri = {(orig_clusters_sub == 1).sum()}, "
+      f"Currencies_Soft = {(orig_clusters_sub == 2).sum()}")
