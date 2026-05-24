@@ -1441,7 +1441,7 @@ print("Saved plot_fosr_coefficients.png")
 
 def bayes_fosr_approx(Y_mat, scalar_df, yindex,
                       alpha_ridge=0.0, n_basis_smooth=10, lam=1e-3):
-   
+
     n_comm, n_time = Y_mat.shape
     n_pred         = 3
 
@@ -1451,17 +1451,21 @@ def bayes_fosr_approx(Y_mat, scalar_df, yindex,
         scalar_df["vol_z"].values
     ])
 
+    # Ridge-penalised design matrix inverse
     XtX     = X.T @ X + alpha_ridge * np.eye(n_pred)
     XtX_inv = np.linalg.inv(XtX)
 
+    # Pointwise coefficient estimation
     beta_raw = np.zeros((n_pred, n_time))
     for t_idx in range(n_time):
         beta_raw[:, t_idx] = XtX_inv @ X.T @ Y_mat[:, t_idx]
 
+    # B-spline basis and penalty matrix
     Phi, _ = _make_bspline_basis(yindex, n_basis_smooth, order=4)
     P      = _diff_penalty(n_basis_smooth, diff_order=2)
     A      = Phi.T @ Phi + lam * P
 
+    # Post-hoc smoothing of raw coefficient estimates
     beta_hat = np.zeros_like(beta_raw)
     for k in range(n_pred):
         c           = np.linalg.solve(A, Phi.T @ beta_raw[k])
@@ -1470,10 +1474,18 @@ def bayes_fosr_approx(Y_mat, scalar_df, yindex,
     return beta_hat
 
 
+# Default specification: small ridge penalty, more basis functions
+# approximates the flexible default VB model in R
 bayes_default = bayes_fosr_approx(Y_mat, scalar_df, yindex,
                                    alpha_ridge=0.01, n_basis_smooth=15)
+
+# VB specification: moderate ridge penalty, fewer basis functions
+# corresponds to Kp=4, Kt=10 in R bayes_fosr
 bayes_VB      = bayes_fosr_approx(Y_mat, scalar_df, yindex,
                                    alpha_ridge=0.1,  n_basis_smooth=10)
+
+# OLS specification: no ridge penalty
+# corresponds to est.method="OLS", Kt=10 in R bayes_fosr
 bayes_OLS     = bayes_fosr_approx(Y_mat, scalar_df, yindex,
                                    alpha_ridge=0.0,  n_basis_smooth=10)
 
@@ -1509,7 +1521,6 @@ plt.tight_layout()
 plt.savefig("plot_bayes_fosr_comparison.png", dpi=150)
 plt.show()
 print("Saved plot_bayes_fosr_comparison.png")
-
 
 # ============================================================
 # 23. SCALAR-ON-FUNCTION REGRESSION  (pfr)
