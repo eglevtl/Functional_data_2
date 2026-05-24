@@ -1162,7 +1162,6 @@ px2   = px2.sort_values("Date").reset_index(drop=True)
 existing_cols = [c for c in commodities if c in px2.columns]
 px2 = px2[["Date"] + existing_cols]
 
-# Log returns iš volatility failo
 returns_vol = px2.copy()
 for col in existing_cols:
     returns_vol[col] = np.log(px2[col].astype(float)).diff()
@@ -1172,7 +1171,7 @@ dates_return_vol = returns_vol["Date"]
 returns_mat      = returns_vol[existing_cols].values.astype(float)
 
 # ============================================================
-# 18.HISTORICAL VOLATILITY
+# 18. HISTORICAL VOLATILITY
 # ============================================================
 
 vol_window_start = event_date - pd.Timedelta(days=365)
@@ -1186,14 +1185,17 @@ idx_vol = np.where(
 print(f"Volatility window: {vol_window_start.date()} to {vol_window_end.date()} "
       f"({len(idx_vol)} trading days)")
 
-hist_vol = returns_mat[idx_vol, :].std(axis=0, ddof=1) * np.sqrt(252)
-hist_vol = pd.Series(hist_vol, index=existing_cols)
+# Historical annualised volatility
+hist_vol = pd.Series(
+    returns_mat[idx_vol, :].std(axis=0, ddof=1) * np.sqrt(252),
+    index=existing_cols
+)
 
 print("\nHistorical annualised volatility per commodity:")
-print(hist_vol.sort_values(ascending=False).round(4).to_string())
+print(hist_vol[commodities].sort_values(ascending=False).round(4).to_string())
 
-hist_vol_z            = (hist_vol - hist_vol.mean()) / hist_vol.std(ddof=1)
-hist_vol_z.index      = existing_cols
+# Standardised volatility (z-scores)
+hist_vol_z = (hist_vol - hist_vol.mean()) / hist_vol.std(ddof=1)
 
 _R_metals_agri = {
     "Gold", "Silver", "Palladium", "Platinum",
@@ -1201,21 +1203,17 @@ _R_metals_agri = {
     "Wheat", "Corn", "Soybeans", "Coffee", "Sugar", "Cotton"
 }
 
-# Kuris Python klasterio numeris dominuoja tarp R Metals_Agri prekių?
 _anchor_mask   = np.array([c in _R_metals_agri for c in commodities])
 _anchor_labels = hc_labels[_anchor_mask]
-_dominant      = int(np.bincount(_anchor_labels - 1).argmax()) + 1  # 1 arba 2
+_dominant      = int(np.bincount(_anchor_labels - 1).argmax()) + 1
 
 if _dominant == 1:
-    # Python cluster 1 = R Metals_Agri  → viskas gerai
     _aligned_labels = hc_labels.copy()
-    print("[Cluster align] Python cluster 1 = R Metals_Agri — jokių pakeitimų.")
+    print("[Cluster align] Python cluster 1 = R Metals_Agri — no changes.")
 else:
-    # Python cluster 1 = R Currencies_Soft → apverčiame
     _aligned_labels = np.where(hc_labels == 1, 2, 1)
     print("[Cluster align] Clusters aligned.")
 
-_check = pd.DataFrame({"commodity": commodities, "cluster_py_aligned": _aligned_labels})
 print("\nClusters:")
 for lbl, name in {1: "Metals_Agri", 2: "Currencies_Soft"}.items():
     members = [commodities[i] for i, c in enumerate(_aligned_labels) if c == lbl]
@@ -1234,7 +1232,7 @@ scalar_df = pd.DataFrame({
                         categories=["Metals_Agri", "Currencies_Soft"]
                       ),
     "vol_z"         : hist_vol_z[commodities].values,
-    "cluster_dummy" : (_aligned_labels == 2).astype(int),  # Currencies_Soft = 1
+    "cluster_dummy" : (_aligned_labels == 2).astype(int), 
 })
 
 print("\nScalar predictor data frame:")
@@ -1252,7 +1250,6 @@ Y_mat = lgp.T.copy()
 scalar_df["Y"] = list(Y_mat)    
 
 def _make_bspline_basis(t_grid, n_basis, order=4):
-    """B-spline bazės matrica (n_time × n_basis)."""
     t_min, t_max = t_grid.min(), t_grid.max()
     n_interior   = n_basis - order
     interior     = np.linspace(t_min, t_max, n_interior + 2)[1:-1]
@@ -1270,7 +1267,6 @@ def _make_bspline_basis(t_grid, n_basis, order=4):
 
 
 def _diff_penalty(n_basis, diff_order=2):
-    """Antrosios eilės skirtumų penalizacijos matrica."""
     D = np.diff(np.eye(n_basis), n=diff_order, axis=0)
     return D.T @ D
 
@@ -1305,8 +1301,8 @@ def pffr_pointwise(Y_mat, scalar_df, yindex, n_basis_smooth=15, lam=1e-3):
     XtX_inv = np.linalg.pinv(X.T @ X)
 
     for t_idx in range(n_time):
-        y_t            = Y_mat[:, t_idx]
-        b              = XtX_inv @ X.T @ y_t
+        y_t                = Y_mat[:, t_idx]
+        b                  = XtX_inv @ X.T @ y_t
         beta_raw[:, t_idx] = b
 
         y_hat  = X @ b
@@ -1318,27 +1314,97 @@ def pffr_pointwise(Y_mat, scalar_df, yindex, n_basis_smooth=15, lam=1e-3):
         ss_res = np.sum(resid ** 2)
         r2_vec[t_idx] = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
-    Phi, _  = _make_bspline_basis(yindex, n_basis_smooth, order=4)
-    P       = _diff_penalty(n_basis_smooth, diff_order=2)
-    A       = Phi.T @ Phi + lam * P
+    Phi, _ = _make_bspline_basis(yindex, n_basis_smooth, order=4)
+    P      = _diff_penalty(n_basis_smooth, diff_order=2)
+    A      = Phi.T @ Phi + lam * P
 
     beta_hat = np.zeros_like(beta_raw)
     for k in range(n_pred):
-        c              = np.linalg.solve(A, Phi.T @ beta_raw[k])
-        beta_hat[k]    = Phi @ c
+        c           = np.linalg.solve(A, Phi.T @ beta_raw[k])
+        beta_hat[k] = Phi @ c
 
     mean_r2_adj = float(np.mean(
         1 - (1 - r2_vec) * (n_comm - 1) / max(n_comm - n_pred - 1, 1)
     ))
 
-    return beta_hat, se_hat, r2_vec, mean_r2_adj
+    # ── Parametric coefficients at t=0 ──
+    t0_idx   = int(np.argmin(np.abs(yindex)))
+    df_resid = max(n_comm - n_pred, 1)
+
+    param_names = ["(Intercept)", "clusterCurrencies_Soft", "vol_z"]
+    estimates   = beta_hat[:, t0_idx]
+    std_errors  = se_hat[:, t0_idx]
+    t_vals      = estimates / (std_errors + 1e-12)
+    p_vals      = 2 * (1 - t.cdf(np.abs(t_vals), df=df_resid))
+
+    param_table = pd.DataFrame({
+        "Estimate"  : estimates.round(6),
+        "Std. Error": std_errors.round(6),
+        "t value"   : t_vals.round(4),
+        "Pr(>|t|)"  : p_vals.round(4),
+    }, index=param_names)
+
+    # ── Smooth term summary ──
+    H_smooth  = Phi @ np.linalg.solve(A, Phi.T)
+    edf_total = float(np.trace(H_smooth))
+    edf_per   = edf_total / n_pred
+
+    smooth_names = [
+        "Intercept(yindex)",
+        "clusterCurrencies_Soft(yindex)",
+        "vol_z(yindex)"
+    ]
+
+    f_stats = np.array([
+        float(np.mean(beta_hat[k]**2) / (np.mean(se_hat[k]**2) + 1e-12))
+        for k in range(n_pred)
+    ])
+    edf_each = np.array([edf_per] * n_pred)
+
+    from scipy.stats import f as f_dist
+    p_smooth = np.array([
+        float(1 - f_dist.cdf(f_stats[k], dfn=edf_each[k], dfd=df_resid))
+        for k in range(n_pred)
+    ])
+
+    smooth_table = pd.DataFrame({
+        "edf"    : edf_each.round(3),
+        "F"      : f_stats.round(3),
+        "p-value": p_smooth.round(6),
+    }, index=smooth_names)
+
+    # ── Model fit ──
+    ss_res_total = float(np.sum((Y_mat - X @ beta_raw)**2))
+    ss_tot_total = float(np.sum((Y_mat - Y_mat.mean())**2))
+    r2_global    = 1 - ss_res_total / ss_tot_total
+    n_obs        = n_comm * n_time
+    dev_expl     = r2_global * 100
+    scale_est    = ss_res_total / max(n_obs - n_pred, 1)
+
+    return (beta_hat, se_hat, r2_vec, mean_r2_adj,
+            param_table, smooth_table,
+            r2_global, mean_r2_adj, dev_expl, scale_est, n_obs)
 
 
-beta_hat, se_hat, r2_vec, fosr_r2_adj = pffr_pointwise(
+beta_hat, se_hat, r2_vec, fosr_r2_adj, \
+param_tbl, smooth_tbl, \
+r2_global, r2_adj_global, dev_expl, scale_est, n_obs = pffr_pointwise(
     Y_mat, scalar_df, yindex, n_basis_smooth=15, lam=1e-3
 )
 
-print(f"\npffr atitikmuo — mean R²(adj): {fosr_r2_adj:.4f}")
+print(f"\npffr equivalent — mean R²(adj): {fosr_r2_adj:.4f}")
+
+print("\nParametric Coefficients (evaluated at t=0):")
+print(param_tbl.to_string())
+
+print("\nSmooth and Functional Coefficients:")
+print(smooth_tbl.to_string())
+
+print(f"\nModel Fit Statistics:")
+print(f"  Adjusted R²        : {r2_adj_global:.4f}")
+print(f"  Deviance explained : {dev_expl:.1f}%")
+print(f"  Scale estimate     : {scale_est:.6f}")
+print(f"  Observations (n)   : {n_obs} ({n_obs // len(yindex)} x {len(yindex)})")
 
 labels_beta = [
     r"$\hat{\beta}_0(t)$ – Functional Intercept",
@@ -1354,7 +1420,7 @@ for k, ax in enumerate(axes):
     se = se_hat[k]
     ax.plot(yindex, b, color=colors_beta[k], lw=2, label=labels_beta[k])
     ax.fill_between(yindex, b - 1.96 * se, b + 1.96 * se,
-                    alpha=0.2, color=colors_beta[k], label="95% CI")
+                    alpha=0.2, color=colors_beta[k], label="95% pointwise CI")
     ax.axhline(0, color="grey", lw=0.8, ls="--")
     ax.axvline(0, color="red",  lw=1.2, ls="--", label="t=0 (tariff)")
     ax.set_ylabel(f"beta_{k}(t)")
@@ -1362,11 +1428,11 @@ for k, ax in enumerate(axes):
     ax.legend(fontsize=8, frameon=False)
 
 axes[-1].set_xlabel("Days relative to tariff announcement")
-plt.suptitle("pffr: Functional coefficient functions", fontsize=13, fontweight="bold")
+plt.suptitle("FoSR: Pointwise coefficient functions", fontsize=13, fontweight="bold")
 plt.tight_layout()
-plt.savefig("plot_pffr_coefficients.png", dpi=150)
+plt.savefig("plot_fosr_coefficients.png", dpi=150)
 plt.show()
-print("Saved plot_pffr_coefficients.png")
+print("Saved plot_fosr_coefficients.png")
 
 
 # ============================================================
