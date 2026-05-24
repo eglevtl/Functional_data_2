@@ -898,90 +898,7 @@ cca_mat_pre <- Y_mat[, pre_idx]
 yindex_pre <- yindex[pre_idx]
 
 ################################################################################
-# PREDICT POST-EVENT RETURN
-################################################################################
-
-cat("\nResponse: post-event mean return\n")
-
-sofr_post <- pfr(
-  post_mean ~
-    lf(
-      cca_mat_pre,
-      k = min(15, length(yindex_pre) - 1),
-      argvals = yindex_pre
-    ) +
-    cluster_dummy +
-    vol_z,
-  data = scalar_df
-)
-
-cat("\nSummary:\n")
-print(summary(sofr_post))
-
-plot(
-  sofr_post,
-  ylab = expression(hat(beta)(t)),
-  xlab = "Days relative to tariff announcement",
-  main = "SoFR: pre-event functional predictor"
-)
-
-abline(v = 0, col = "red", lty = 2)
-
-################################################################################
-# PREDICT HISTORICAL VOLATILITY
-################################################################################
-
-cat("\nResponse: historical volatility (standardised)\n")
-
-sofr_vol <- pfr(
-  hist_vol_z ~
-    lf(
-      cca_mat_pre,
-      k = min(15, length(yindex_pre) - 1),
-      argvals = yindex_pre
-    ) +
-    cluster_dummy,
-  data = scalar_df
-)
-
-cat("\nSummary:\n")
-print(summary(sofr_vol))
-
-plot(
-  sofr_vol,
-  ylab = expression(hat(beta)(t)),
-  xlab = "Days relative to tariff announcement",
-  main = "SoFR: predicting historical volatility"
-)
-
-abline(v = 0, col = "red", lty = 2)
-
-################################################################################
-# DIAGNOSTICS
-################################################################################
-
-vol_table <- scalar_df[, c(
-  "commodity",
-  "cluster",
-  "vol_z"
-)]
-
-vol_table$hist_vol_annualised <-
-  round(hist_vol[scalar_df$commodity] * 100, 2)
-
-vol_table <- vol_table[
-  order(
-    vol_table$cluster,
-    -vol_table$hist_vol_annualised
-  ),
-]
-
-cat("\n\n========== VOLATILITY SUMMARY TABLE ==========\n")
-
-print(vol_table)
-
-################################################################################
-# BOXPLOT
+# BOXPLOT (VOLATILITY DISTRIBUTION BY CLUSTER)
 ################################################################################
 
 boxplot(
@@ -1005,20 +922,8 @@ stripchart(
 )
 
 ################################################################################
-#                                                                              #
-#   SENSITIVITY ANALYSIS – EXCLUDING NATURAL GAS                               #
-#                                                                              #
-#   Natural Gas sits in the Currencies_Soft cluster with vol_z = 3.26,         #
-#   an extreme outlier identified by MUOD (magnitude outlier).                 #
-#   This script re-runs pffr and SoFR without Natural Gas but keeps the        #
-#   original cluster labels, no re-clustering.                                 #
-#   Cluster 2 retains 5 members. The goal is to check whether Natural Gas      #
-#   drives the main conclusions rather than to rebuild the clustering structure#
-#                                                                              #
+#   SENSITIVITY ANALYSIS – EXCLUDING NATURAL GAS                               #                             #
 ################################################################################
-
-cat("  SENSITIVITY ANALYSIS: EXCLUDING NATURAL GAS\n")
-
 ################################################################################
 # 1. SUBSET – drop Natural Gas, keep original cluster labels
 ################################################################################
@@ -1028,7 +933,6 @@ keep_idx <- which(colnames(scaled_returns) != ng_name)
 keep_nms <- colnames(scaled_returns)[keep_idx]
 
 cat(sprintf("Commodities retained: %d  (dropped: %s)\n", length(keep_nms), ng_name))
-cat("Note: original cluster labels are preserved — no re-clustering.\n\n")
 
 # Subset functional object and scaled returns
 ret_fd_sub     <- ret_fd[keep_idx]
@@ -1041,7 +945,6 @@ cat("Cluster membership (original labels, Natural Gas excluded):\n")
 print(split(keep_nms, factor(orig_clusters_sub,
                               levels = c(1,2),
                               labels = c("Metals_Agri","Currencies_Soft"))))
-cat("\n")
 
 ################################################################################
 # 2. SCALAR PREDICTOR DATA FRAME (sub-sample, original clusters)
@@ -1094,7 +997,6 @@ pffr_data_sub <- list(
   cluster_dummy = scalar_df_sub$cluster_dummy
 )
 
-# Main model (no interaction — sensitivity analysis confirmed it is unstable)
 fosr_sub <- pffr(
   Y ~ cluster + vol_z,
   yind = yindex_sub,
@@ -1110,97 +1012,7 @@ cat(sprintf(
   summary(fosr_sub)$r.sq
 ))
 
-# Plot
 par(mfrow = c(2, 2), mar = c(4, 4, 3, 1))
 plot(fosr_sub, pages = 1, scale = 0,
      main = "pffr (Natural Gas excluded, original clusters)")
 par(mfrow = c(1, 1))
-
-################################################################################
-# 5. SoFR – PREDICT POST-EVENT RETURN (sub-sample)
-################################################################################
-
-cat("--- SoFR: predicting post-event return (Natural Gas excluded) ---\n\n")
-
-idx_post_sub    <- which(t_rel %in% 1:20)
-post_mean_sub   <- colMeans(scaled_ret_sub[idx_post_sub, , drop = FALSE])
-scalar_df_sub$post_mean  <- as.numeric(post_mean_sub)
-scalar_df_sub$hist_vol_z <- hist_vol_z_sub[keep_nms]
-
-pre_idx_sub     <- which(yindex_sub < 0)
-cca_mat_pre_sub <- Y_mat_sub[, pre_idx_sub]
-yindex_pre_sub  <- yindex_sub[pre_idx_sub]
-
-# Simplified model: drop cluster_x_vol
-sofr_post_sub <- pfr(
-  post_mean ~
-    lf(cca_mat_pre_sub,
-       k       = min(15, length(yindex_pre_sub) - 1),
-       argvals = yindex_pre_sub) +
-    cluster_dummy +
-    vol_z,
-  data = scalar_df_sub
-)
-
-cat("SoFR summary (post-event return, Natural Gas excluded):\n")
-print(summary(sofr_post_sub))
-
-plot(sofr_post_sub,
-     ylab = expression(hat(beta)(t)),
-     xlab = "Days relative to tariff announcement",
-     main = "SoFR – pre-event predictor (Natural Gas excluded)")
-abline(v = 0, col = "red", lty = 2)
-
-################################################################################
-# 6. COEFFICIENT COMPARISON: full vs sub-sample SoFR
-################################################################################
-
-cat("\n--- Parametric coefficient comparison: full vs sub-sample ---\n\n")
-
-param_full <- as.data.frame(summary(sofr_post)$p.table)
-param_sub  <- as.data.frame(summary(sofr_post_sub)$p.table)
-
-# Common terms between the two models
-common_terms <- intersect(rownames(param_full), rownames(param_sub))
-
-comparison <- data.frame(
-  Term      = common_terms,
-  Est_full  = round(param_full[common_terms, "Estimate"],  4),
-  pval_full = round(param_full[common_terms, "Pr(>|t|)"],  4),
-  Est_sub   = round(param_sub[common_terms,  "Estimate"],  4),
-  pval_sub  = round(param_sub[common_terms,  "Pr(>|t|)"],  4),
-  row.names = NULL
-)
-
-print(comparison)
-
-# Flag whether sign and significance are preserved
-cat("\nRobustness check (same sign AND p < 0.05 in both?):\n")
-for (i in seq_len(nrow(comparison))) {
-  sig_full  <- comparison$pval_full[i] < 0.05
-  sig_sub   <- comparison$pval_sub[i]  < 0.05
-  same_sign <- sign(comparison$Est_full[i]) == sign(comparison$Est_sub[i])
-  robust    <- sig_full & sig_sub & same_sign
-  cat(sprintf("  %-30s: %s\n",
-              comparison$Term[i],
-              ifelse(robust,
-                     "ROBUST",
-                     ifelse(same_sign,
-                            "same sign, significance changed",
-                            "CHANGED"))))
-}
-
-################################################################################
-# 7. SUMMARY
-################################################################################
-
-cat("  SENSITIVITY SUMMARY\n")
-
-cat(sprintf("pffr  R²: full = %.3f  |  sub (no NatGas) = %.3f\n",
-            summary(fosr_fit)$r.sq, summary(fosr_sub)$r.sq))
-cat(sprintf("SoFR  R²: full = %.3f  |  sub (no NatGas) = %.3f\n",
-            summary(sofr_post)$r.sq, summary(sofr_post_sub)$r.sq))
-cat("Clustering: original labels retained — no reassignment.\n")
-cat(sprintf("Cluster sizes: Metals_Agri = %d, Currencies_Soft = %d\n",
-            sum(orig_clusters_sub == 1),
-            sum(orig_clusters_sub == 2)))
