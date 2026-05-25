@@ -1532,9 +1532,8 @@ scalar_df        = scalar_df.copy()
 scalar_df["post_mean"]     = post_mean_vec
 scalar_df["hist_vol_z"]    = hist_vol_z[commodities].values
 
-# (atitinka R: pre_idx <- which(yindex < 0); cca_mat_pre <- Y_mat[, pre_idx])
 pre_idx     = np.where(yindex < 0)[0]
-cca_mat_pre = Y_mat[:, pre_idx]       # (n_comm, n_pre)
+cca_mat_pre = Y_mat[:, pre_idx]
 yindex_pre  = yindex[pre_idx]
 
 
@@ -1556,8 +1555,8 @@ def pfr_sofr(cca_mat_pre, scalar_df, response_col,
 
     
     dt     = np.gradient(yindex_pre)
-    W_Phi  = Phi * dt[:, None]        # (n_pre, k)
-    V      = cca_mat_pre @ W_Phi      # (n_comm, k)
+    W_Phi  = Phi * dt[:, None] 
+    V      = cca_mat_pre @ W_Phi
 
 
     ones = np.ones((n_comm, 1))
@@ -1573,7 +1572,7 @@ def pfr_sofr(cca_mat_pre, scalar_df, response_col,
 
 
     P_full = np.zeros((n_total, n_total))
-    P_full[1:1 + k, 1:1 + k] = P   # λ pridedama žemiau
+    P_full[1:1 + k, 1:1 + k] = P
 
     if lam is None:
         lam_grid   = np.logspace(-4, 4, 100)
@@ -1588,7 +1587,7 @@ def pfr_sofr(cca_mat_pre, scalar_df, response_col,
                 continue
             y_hat_try = X_design @ coef_try
             resid_try = y - y_hat_try
-            # Hat matrica pėdsakas (efektyvūs laisvės laipsniai)
+
             try:
                 H_try = X_design @ np.linalg.solve(A_try, X_design.T)
                 edf_try = np.trace(H_try)
@@ -1609,8 +1608,6 @@ def pfr_sofr(cca_mat_pre, scalar_df, response_col,
     coef  = np.linalg.solve(A, X_design.T @ y)
     y_hat = X_design @ coef
 
-    # --- Efektyvūs laisvės laipsniai: edf = trace(H) ---
-    # (atitinka R mgcv edf; skaičiuojama kaip trace(X (X'X+λP)^{-1} X'))
     H        = X_design @ np.linalg.solve(A, X_design.T)
     edf      = float(np.trace(H))                 
     df_resid = max(n_comm - edf, 1e-6)            
@@ -1628,7 +1625,7 @@ def pfr_sofr(cca_mat_pre, scalar_df, response_col,
 
     intercept = coef[0]
     c_beta    = coef[1:1 + k]
-    beta_func = Phi @ c_beta           # β(t) = Φ(t) c
+    beta_func = Phi @ c_beta 
 
     if n_scalar > 0:
         c_scalar     = coef[1 + k:]
@@ -1809,13 +1806,12 @@ for lbl, name in {1: "Metals_Agri", 2: "Currencies_Soft"}.items():
     print(f"  {name}: {members}")
 print()
 
-
 hist_vol_sub   = hist_vol[keep_nms]
 hist_vol_z_sub = (hist_vol_sub - hist_vol_sub.mean()) / hist_vol_sub.std(ddof=1)
 
-scaled_ret_sub  = scaled_returns[:, keep_idx]
-idx_post_sub    = np.isin(t_rel, np.arange(1, 21))
-post_mean_sub   = scaled_ret_sub[idx_post_sub, :].mean(axis=0)
+scaled_ret_sub = scaled_returns[:, keep_idx]
+idx_post_sub   = np.isin(t_rel, np.arange(1, 21))
+post_mean_sub  = scaled_ret_sub[idx_post_sub, :].mean(axis=0)
 
 scalar_df_sub = pd.DataFrame({
     "commodity"     : keep_nms,
@@ -1834,20 +1830,66 @@ print("Scalar predictor data frame (sub-sample):")
 print(scalar_df_sub[["commodity", "cluster", "vol_z"]].to_string(index=False))
 print()
 
-
-Y_mat_sub   = Y_mat[keep_idx, :]
+Y_mat_sub          = Y_mat[keep_idx, :]
 scalar_df_sub["Y"] = list(Y_mat_sub)
 
+# ── pffr (Natural Gas excluded) ──────────────────────────────
 
 print("--- pffr (Natural Gas excluded, original clusters) ---\n")
 
-beta_sub, se_sub, r2_sub_vec, fosr_sub_r2_adj = pffr_pointwise(
+(beta_sub, se_sub, r2_sub_vec, fosr_sub_r2_adj,
+ param_tbl_sub, smooth_tbl_sub,
+ r2_global_sub, r2_adj_global_sub, dev_expl_sub,
+ scale_est_sub, n_obs_sub) = pffr_pointwise(
     Y_mat_sub, scalar_df_sub, yindex, n_basis_smooth=15, lam=1e-3
 )
 
 print(f"pffr R²(adj): full = {fosr_r2_adj:.4f}  |  sub (no NatGas) = {fosr_sub_r2_adj:.4f}\n")
 
-print("--- SoFR: predicting post-event return (Natural Gas excluded) ---\n")
+print("Parametric Coefficients (evaluated at t=0):")
+print(param_tbl_sub.to_string())
+
+print("\nSmooth and Functional Coefficients:")
+print(smooth_tbl_sub.to_string())
+
+print(f"\nModel Fit Statistics:")
+print(f"  Adjusted R²        : {r2_adj_global_sub:.4f}")
+print(f"  Deviance explained : {dev_expl_sub:.1f}%")
+print(f"  Scale estimate     : {scale_est_sub:.6f}")
+print(f"  Observations (n)   : {n_obs_sub} ({n_obs_sub // len(yindex)} x {len(yindex)})")
+
+labels_beta = [
+    r"$\hat{\beta}_0(t)$ – Functional Intercept",
+    r"$\hat{\beta}_1(t)$ – Cluster effect (Currencies_Soft)",
+    r"$\hat{\beta}_2(t)$ – Historical volatility effect",
+]
+colors_beta = ["black", "steelblue", "darkorange"]
+
+fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+
+for k, ax in enumerate(axes):
+    b  = beta_sub[k]
+    se = se_sub[k]
+    ax.plot(yindex, b, color=colors_beta[k], lw=2, label=labels_beta[k])
+    ax.fill_between(yindex, b - 1.96 * se, b + 1.96 * se,
+                    alpha=0.2, color=colors_beta[k], label="95% pointwise CI")
+    ax.axhline(0, color="grey", lw=0.8, ls="--")
+    ax.axvline(0, color="red",  lw=1.2, ls="--", label="t=0 (tariff)")
+    ax.set_ylabel(f"beta_{k}(t)")
+    ax.set_title(labels_beta[k])
+    ax.legend(fontsize=8, frameon=False)
+
+axes[-1].set_xlabel("Days relative to tariff announcement")
+plt.suptitle("pffr (Natural Gas excluded): Pointwise coefficient functions",
+             fontsize=13, fontweight="bold")
+plt.tight_layout()
+plt.savefig("plot_fosr_sub_coefficients.png", dpi=150)
+plt.show()
+print("Saved plot_fosr_sub_coefficients.png")
+
+# ── SoFR: post-event return (Natural Gas excluded) ───────────
+
+print("\n--- SoFR: predicting post-event return (Natural Gas excluded) ---\n")
 
 pre_idx_sub     = np.where(yindex < 0)[0]
 cca_mat_pre_sub = Y_mat_sub[:, pre_idx_sub]
@@ -1856,11 +1898,11 @@ yindex_pre_sub  = yindex[pre_idx_sub]
 sofr_post_sub = pfr_sofr(
     cca_mat_pre_sub,
     scalar_df_sub,
-    response_col       = "post_mean",
-    extra_scalar_cols  = ["cluster_dummy", "vol_z"],
-    yindex_pre         = yindex_pre_sub,
-    k                  = min(15, len(yindex_pre_sub) - 1),
-    lam                = None,   # GCV paieška
+    response_col      = "post_mean",
+    extra_scalar_cols = ["cluster_dummy", "vol_z"],
+    yindex_pre        = yindex_pre_sub,
+    k                 = min(15, len(yindex_pre_sub) - 1),
+    lam               = None,
 )
 
 print("SoFR summary (post-event return, Natural Gas excluded):")
@@ -1885,9 +1927,8 @@ plt.tight_layout()
 plt.savefig("plot_sofr_post_sub.png", dpi=150)
 plt.show()
 
-# -------------------------------------------------------
-# 27. COEFFICIENT COMPARISON: full vs sub-sample
-# -------------------------------------------------------
+# ── Coefficient comparison: full vs sub-sample ───────────────
+
 print("\n--- Parametric coefficient comparison: full vs sub-sample ---\n")
 
 param_full = sofr_post["p_table"]
